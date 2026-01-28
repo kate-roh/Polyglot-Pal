@@ -247,11 +247,20 @@ export async function registerRoutes(
         if (isAudioVideo) {
           try {
             console.log(`Transcribing ${mimeType} file: ${title}`);
-            const { speechToText, ensureCompatibleFormat } = await import('./replit_integrations/audio/client');
+            console.log(`Content length: ${content.length} chars`);
+            
+            const { speechToText, ensureCompatibleFormat, detectAudioFormat } = await import('./replit_integrations/audio/client');
             
             // Convert base64 to buffer
             const rawBuffer = Buffer.from(content, "base64");
+            console.log(`Buffer size: ${rawBuffer.length} bytes`);
+            
+            // Detect format
+            const detectedFormat = detectAudioFormat(rawBuffer);
+            console.log(`Detected format: ${detectedFormat}`);
+            
             const { buffer: audioBuffer, format: inputFormat } = await ensureCompatibleFormat(rawBuffer);
+            console.log(`Converted to ${inputFormat}, size: ${audioBuffer.length} bytes`);
             
             // Transcribe audio to text
             const transcript = await speechToText(audioBuffer, inputFormat);
@@ -264,8 +273,9 @@ export async function registerRoutes(
             
             textContent = transcript;
             console.log(`Transcription successful: ${transcript.substring(0, 100)}...`);
-          } catch (transcribeErr) {
+          } catch (transcribeErr: any) {
             console.error("Transcription error:", transcribeErr);
+            console.error("Error stack:", transcribeErr?.stack);
             return res.status(400).json({ 
               message: "오디오/비디오 변환 실패. 다른 형식의 파일을 시도해주세요.",
               error: String(transcribeErr)
