@@ -12,6 +12,27 @@ export function useHistory() {
   });
 }
 
+export function useSaveHistory() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch(api.history.create.path, {
+        method: api.history.create.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+
+      if (!res.ok) throw new Error("Failed to save history");
+      return api.history.create.responses[201].parse(await res.json());
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.history.list.path] });
+    },
+  });
+}
+
 export function useDeleteHistory() {
   const queryClient = useQueryClient();
   

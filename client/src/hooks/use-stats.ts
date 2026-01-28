@@ -14,3 +14,26 @@ export function useStats() {
     },
   });
 }
+
+export const useUserStats = useStats;
+
+export function useAddXp() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (amount: number) => {
+      const res = await fetch(api.stats.addXp.path, {
+        method: api.stats.addXp.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+        credentials: "include",
+      });
+
+      if (!res.ok) throw new Error("Failed to add XP");
+      return api.stats.addXp.responses[200].parse(await res.json());
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.stats.get.path] });
+    },
+  });
+}

@@ -98,10 +98,26 @@ export async function registerRoutes(
     res.json(stats);
   });
 
+  app.post(api.stats.addXp.path, protect, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const { amount } = api.stats.addXp.input.parse(req.body);
+    const stats = await storage.updateUserXp(userId, amount);
+    res.json(stats);
+  });
+
   // === History ===
   app.get(api.history.list.path, protect, async (req: any, res) => {
     const history = await storage.getHistory(req.user.claims.sub);
     res.json(history);
+  });
+
+  app.post(api.history.create.path, protect, async (req: any, res) => {
+    const input = api.history.create.input.parse(req.body);
+    const history = await storage.createHistory({
+      ...input,
+      userId: req.user.claims.sub
+    });
+    res.status(201).json(history);
   });
 
   app.delete(api.history.delete.path, protect, async (req: any, res) => {

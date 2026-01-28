@@ -13,7 +13,7 @@ export function useBookmarks() {
   });
 }
 
-export function useCreateBookmark() {
+export function useAddBookmark() {
   const queryClient = useQueryClient();
   
   return useMutation({
@@ -33,6 +33,9 @@ export function useCreateBookmark() {
     },
   });
 }
+
+// Alias for backward compatibility if needed, though useAddBookmark is what's used in components
+export const useCreateBookmark = useAddBookmark;
 
 export function useDeleteBookmark() {
   const queryClient = useQueryClient();
