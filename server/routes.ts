@@ -39,11 +39,16 @@ export async function registerRoutes(
         Output ONLY valid JSON matching this schema:
         {
           "summary": "Brief summary of the content",
-          "vocabulary": [{"word": "...", "meaning": "...", "example": "..."}],
-          "grammar": [{"point": "...", "explanation": "...", "example": "..."}],
-          "keySentences": [{"sentence": "...", "translation": "...", "nuance": "..."}],
-          "culturalNotes": ["..."]
+          "vocabulary": [{"word": "single word", "meaning": "definition", "example": "example sentence"}],
+          "phrases": [{"phrase": "useful expression/idiom like 'get it right', 'in a row', 'start to begin'", "meaning": "what it means", "usage": "example usage in context"}],
+          "grammar": [{"point": "grammar concept", "explanation": "explanation", "example": "example sentence"}],
+          "keySentences": [{"sentence": "full sentence from content", "translation": "translation", "nuance": "context/nuance"}],
+          "culturalNotes": ["cultural context notes"]
         }
+        
+        IMPORTANT: 
+        - "vocabulary" should only contain SINGLE WORDS
+        - "phrases" should contain MULTI-WORD EXPRESSIONS like idioms, collocations, phrasal verbs (e.g., "get it right", "in quick succession", "take a look at")
         
         If the content is a YouTube URL, analyze the likely content of that video based on the URL/title.
         For manual text, analyze the provided text directly.

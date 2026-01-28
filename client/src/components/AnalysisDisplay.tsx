@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { BookMarked, MessageSquare, BookOpen, Lightbulb } from "lucide-react";
+import { BookMarked, MessageSquare, BookOpen, Lightbulb, Quote } from "lucide-react";
 import { type AnalysisResult } from "@shared/schema";
 import { useAddBookmark } from "@/hooks/use-bookmarks";
 
@@ -11,7 +11,7 @@ interface AnalysisDisplayProps {
 export function AnalysisDisplay({ data, sourceType }: AnalysisDisplayProps) {
   const { mutate: bookmark } = useAddBookmark();
 
-  const handleBookmark = (type: 'word' | 'sentence' | 'grammar', content: string, meaning: string, context?: string) => {
+  const handleBookmark = (type: 'word' | 'sentence' | 'grammar' | 'phrase', content: string, meaning: string, context?: string) => {
     bookmark({
       type,
       sourceType,
@@ -107,6 +107,35 @@ export function AnalysisDisplay({ data, sourceType }: AnalysisDisplayProps) {
           ))}
         </motion.div>
       </div>
+
+      {/* Phrases Section */}
+      {data.phrases && data.phrases.length > 0 && (
+        <motion.div variants={item} className="space-y-4">
+          <h3 className="text-xl font-display font-bold flex items-center gap-2 text-orange-400">
+            <Quote className="w-6 h-6" />
+            Useful Phrases & Expressions
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {data.phrases.map((phrase, i) => (
+              <div key={i} className="glass-card p-4 rounded-xl border border-white/5 hover:border-orange-500/30 transition-colors">
+                <div className="flex justify-between items-start mb-2">
+                  <h4 className="text-lg font-bold text-foreground">{phrase.phrase}</h4>
+                  <button 
+                    onClick={() => handleBookmark('phrase', phrase.phrase, phrase.meaning, phrase.usage)}
+                    className="p-2 rounded-full hover:bg-white/10 text-muted-foreground hover:text-orange-400 transition-colors"
+                  >
+                    <BookMarked className="w-5 h-5" />
+                  </button>
+                </div>
+                <p className="text-orange-400/80 font-medium mb-2">{phrase.meaning}</p>
+                {phrase.usage && (
+                  <p className="text-sm text-muted-foreground italic border-l-2 border-orange-500/30 pl-3">"{phrase.usage}"</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* Key Sentences Section */}
       <motion.div variants={item} className="space-y-4">

@@ -51,7 +51,7 @@ export const analysisHistoryRelations = relations(analysisHistory, ({ one }) => 
 export const bookmarks = pgTable("bookmarks", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),
-  type: text("type").notNull(), // 'word' | 'sentence' | 'grammar'
+  type: text("type").notNull(), // 'word' | 'sentence' | 'grammar' | 'phrase'
   sourceType: text("source_type").notNull(), // 'youtube' | 'file' | 'manual'
   content: text("content").notNull(), // The word/sentence itself
   meaning: text("meaning").notNull(), // Translation or definition
@@ -82,6 +82,11 @@ export const analysisResultSchema = z.object({
     meaning: z.string(),
     example: z.string().optional()
   })),
+  phrases: z.array(z.object({
+    phrase: z.string(),
+    meaning: z.string(),
+    usage: z.string().optional()
+  })).optional(),
   grammar: z.array(z.object({
     point: z.string(),
     explanation: z.string(),

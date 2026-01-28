@@ -6,11 +6,19 @@ Polyglot Hub is an AI-powered language learning platform that combines immersive
 
 Key features include:
 - Media Studio for analyzing YouTube videos, uploaded files, and manual text input
-- World Tour mode for destination-based language practice
-- Vocabulary and grammar extraction from media content
-- Bookmark/vault system for saving learned expressions
+- World Tour mode for destination-based language practice with voice input/output (STT/TTS)
+- Vocabulary, phrases, and grammar extraction from media content
+- Bookmark/vault system for saving words, phrases, sentences, and grammar points
 - Progress tracking with XP, levels, and daily streaks
+- Passport stamp system for completed World Tour cities
 - Replit Auth integration for user authentication
+
+### Bookmark Types
+The bookmark system supports four types of saved items:
+- **word**: Single vocabulary words
+- **phrase**: Multi-word expressions, idioms, collocations (e.g., "get it right", "in quick succession")
+- **sentence**: Full sentences with translations
+- **grammar**: Grammar patterns and rules
 
 ## User Preferences
 

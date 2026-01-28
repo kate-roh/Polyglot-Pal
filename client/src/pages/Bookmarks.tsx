@@ -2,7 +2,7 @@ import { Navigation } from "@/components/Navigation";
 import { useBookmarks, useDeleteBookmark } from "@/hooks/use-bookmarks";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Trash2, Bookmark as BookmarkIcon, MessageCircle, Sparkles, Loader2 } from "lucide-react";
+import { Trash2, Bookmark as BookmarkIcon, MessageCircle, Sparkles, Loader2, Quote } from "lucide-react";
 import { motion } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
@@ -26,6 +26,7 @@ export default function BookmarksPage() {
       case 'word': return <BookmarkIcon className="w-4 h-4 text-blue-400" />;
       case 'sentence': return <MessageCircle className="w-4 h-4 text-green-400" />;
       case 'grammar': return <Sparkles className="w-4 h-4 text-purple-400" />;
+      case 'phrase': return <Quote className="w-4 h-4 text-orange-400" />;
       default: return null;
     }
   };
@@ -81,9 +82,10 @@ export default function BookmarksPage() {
           </header>
 
           <Tabs defaultValue="all" className="w-full">
-            <TabsList className="bg-muted/50 border border-border p-1 h-auto mb-6">
+            <TabsList className="bg-muted/50 border border-border p-1 h-auto mb-6 flex-wrap">
               <TabsTrigger value="all" className="rounded-lg data-[state=active]:bg-primary">All</TabsTrigger>
               <TabsTrigger value="word" className="rounded-lg data-[state=active]:bg-primary">Vocabulary</TabsTrigger>
+              <TabsTrigger value="phrase" className="rounded-lg data-[state=active]:bg-primary">Phrases</TabsTrigger>
               <TabsTrigger value="sentence" className="rounded-lg data-[state=active]:bg-primary">Sentences</TabsTrigger>
               <TabsTrigger value="grammar" className="rounded-lg data-[state=active]:bg-primary">Grammar</TabsTrigger>
             </TabsList>
@@ -93,7 +95,7 @@ export default function BookmarksPage() {
                 {bookmarks?.map((item) => <BookmarkCard key={item.id} item={item} />)}
               </div>
             </TabsContent>
-            {['word', 'sentence', 'grammar'].map((type) => (
+            {['word', 'phrase', 'sentence', 'grammar'].map((type) => (
               <TabsContent key={type} value={type} className="mt-0">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {bookmarks?.filter(b => b.type === type).map((item) => (
