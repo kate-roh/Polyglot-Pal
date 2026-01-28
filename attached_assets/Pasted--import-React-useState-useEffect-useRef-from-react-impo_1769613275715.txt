@@ -1,0 +1,134 @@
+
+import React, { useState, useEffect, useRef } from 'react';
+import { EvaluationResult } from '../types';
+import { evaluateSpeech, playPronunciation } from '../services/geminiService';
+
+interface Props {
+  originalText: string;
+  onAddXP: (amount: number) => void;
+  onClose: () => void;
+}
+
+const ShadowingModal: React.FC<Props> = ({ originalText, onAddXP, onClose }) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [evalResult, setEvalResult] = useState<EvaluationResult | null>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [userAudioUrl, setUserAudioUrl] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onresult = async (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setIsRecording(false);
+        stopMediaRecorder();
+        setIsEvaluating(true);
+        try {
+          const result = await evaluateSpeech(originalText, transcript);
+          setEvalResult(result);
+          if (result.score >= 80) onAddXP(20);
+          else if (result.score >= 50) onAddXP(10);
+        } catch (e) { console.error(e); }
+        finally { setIsEvaluating(false); }
+      };
+
+      recognitionRef.current.onerror = () => {
+        setIsRecording(false);
+        stopMediaRecorder();
+      };
+    }
+  }, [originalText]);
+
+  const startMediaRecorder = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      recorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        setUserAudioUrl(URL.createObjectURL(audioBlob));
+      };
+      recorder.start();
+    } catch (err) { console.error(err); }
+  };
+
+  const stopMediaRecorder = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    }
+  };
+
+  const startRecording = () => {
+    setEvalResult(null);
+    setUserAudioUrl(null);
+    setIsRecording(true);
+    recognitionRef.current?.start();
+    startMediaRecorder();
+  };
+
+  const playMyVoice = () => { if (userAudioUrl) new Audio(userAudioUrl).play(); };
+
+  const renderEvaluatedText = () => {
+    if (!evalResult) return <p className="text-2xl font-bold text-slate-800 leading-tight">{originalText}</p>;
+    const words = originalText.split(' ');
+    return (
+      <p className="text-2xl font-bold leading-tight">
+        {words.map((word, idx) => {
+          const cleanWord = word.replace(/[.,!?]/g, '').toLowerCase();
+          const isIncorrect = evalResult.incorrectWords?.some(iw => cleanWord.includes(iw.toLowerCase()));
+          return <span key={idx} className={`${isIncorrect ? 'text-red-500 underline decoration-wavy' : 'text-slate-800'}`}>{word} </span>;
+        })}
+      </p>
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2"><i className="fa-solid fa-microphone-lines text-blue-600"></i>Shadowing Master</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        <div className="p-8 space-y-8">
+          <div className="text-center space-y-3">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pronunciation Target</p>
+            {renderEvaluatedText()}
+          </div>
+          <div className="flex flex-col items-center gap-4">
+            <button onClick={isRecording ? () => recognitionRef.current?.stop() : startRecording} disabled={isEvaluating} className={`w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-blue-600'} text-white`}>
+              <i className={`fa-solid ${isRecording ? 'fa-stop' : 'fa-microphone'} text-3xl`}></i>
+            </button>
+            <p className="text-xs font-black text-slate-400 uppercase">{isRecording ? 'Listening...' : isEvaluating ? 'Analyzing...' : 'Press to Speak'}</p>
+          </div>
+          {evalResult && (
+            <div className="bg-slate-50 rounded-[2rem] p-6 space-y-4 border border-slate-100">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-slate-700 capitalize">{evalResult.status}!</span>
+                <div className="text-3xl font-black text-blue-600">{evalResult.score}<span className="text-xs ml-0.5">pts</span></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => playPronunciation(originalText)} className="py-3 bg-white border rounded-xl text-xs font-black hover:bg-blue-50 transition-all">AI 발음</button>
+                <button onClick={playMyVoice} disabled={!userAudioUrl} className="py-3 bg-white border rounded-xl text-xs font-black hover:bg-pink-50 transition-all disabled:opacity-50">내 목소리</button>
+              </div>
+              <p className="text-sm text-slate-600 leading-relaxed font-bold">{evalResult.feedback}</p>
+              <button onClick={startRecording} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-sm shadow-lg">재도전</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ShadowingModal;

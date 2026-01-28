@@ -236,7 +236,43 @@ export async function registerRoutes(
   // === Media Analysis Endpoint (for file and manual) ===
   app.post(api.media.analyze.path, protect, async (req: any, res) => {
     try {
-      const { type, content, title } = api.media.analyze.input.parse(req.body);
+      const { type, content, title, mimeType } = api.media.analyze.input.parse(req.body);
+      
+      let textContent = content;
+      
+      // Check if file is audio/video and needs transcription first
+      if (type === 'file' && mimeType) {
+        const isAudioVideo = mimeType.startsWith('audio/') || mimeType.startsWith('video/');
+        
+        if (isAudioVideo) {
+          try {
+            console.log(`Transcribing ${mimeType} file: ${title}`);
+            const { speechToText, ensureCompatibleFormat } = await import('./replit_integrations/audio/client');
+            
+            // Convert base64 to buffer
+            const rawBuffer = Buffer.from(content, "base64");
+            const { buffer: audioBuffer, format: inputFormat } = await ensureCompatibleFormat(rawBuffer);
+            
+            // Transcribe audio to text
+            const transcript = await speechToText(audioBuffer, inputFormat);
+            
+            if (!transcript || transcript.trim().length === 0) {
+              return res.status(400).json({ 
+                message: "음성을 인식할 수 없습니다. 파일에 음성이 포함되어 있는지 확인해주세요." 
+              });
+            }
+            
+            textContent = transcript;
+            console.log(`Transcription successful: ${transcript.substring(0, 100)}...`);
+          } catch (transcribeErr) {
+            console.error("Transcription error:", transcribeErr);
+            return res.status(400).json({ 
+              message: "오디오/비디오 변환 실패. 다른 형식의 파일을 시도해주세요.",
+              error: String(transcribeErr)
+            });
+          }
+        }
+      }
       
       // Construct prompt for Gemini
       const systemPrompt = `
@@ -254,16 +290,18 @@ export async function registerRoutes(
         IMPORTANT: 
         - "vocabulary" should only contain SINGLE WORDS
         - "phrases" should contain MULTI-WORD EXPRESSIONS like idioms, collocations, phrasal verbs (e.g., "get it right", "in quick succession", "take a look at")
-        
-        For manual text, analyze the provided text directly.
-        For files, the content may be base64 encoded - try to understand and analyze it.
       `;
 
       let userPrompt: string;
       if (type === 'file') {
-        userPrompt = `Analyze this file content (${title || 'file'}) for language learning. Content: ${content.substring(0, 10000)}`;
+        // For audio/video, textContent is now the transcript
+        // For other files, use first 10000 chars
+        const isTranscribed = mimeType && (mimeType.startsWith('audio/') || mimeType.startsWith('video/'));
+        userPrompt = isTranscribed 
+          ? `Analyze this transcribed audio/video content for language learning:\n\n${textContent}`
+          : `Analyze this file content (${title || 'file'}) for language learning. Content: ${textContent.substring(0, 10000)}`;
       } else {
-        userPrompt = `Analyze this text for language learning:\n\n${content}`;
+        userPrompt = `Analyze this text for language learning:\n\n${textContent}`;
       }
 
       // Call Gemini
