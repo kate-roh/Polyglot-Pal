@@ -258,5 +258,113 @@ export async function registerRoutes(
     }
   });
 
+  // === World Tour Chat ===
+  app.post('/api/world-tour/chat', protect, async (req: any, res) => {
+    try {
+      const { destination, mission, language, messages, currentHearts } = req.body;
+      
+      const systemPrompt = `
+        You are "${mission.characterName}", a ${mission.characterRole} in ${language}.
+        The user is a language learner on a mission: "${mission.scenario}"
+        
+        ROLEPLAY RULES:
+        1. Stay in character as ${mission.characterName}
+        2. Respond primarily in ${language} with helpful English hints in parentheses when needed
+        3. Be patient and encouraging with language mistakes
+        4. Guide the conversation toward completing the mission objectives
+        5. React naturally to what the user says
+        
+        POLITENESS CHECK:
+        - If the user is rude, dismissive, or uses inappropriate language, include [HEART_PENALTY:-1] in your response
+        - If the user makes a good effort with ${language}, be encouraging
+        
+        Current objectives: ${mission.objectives.join(', ')}
+        
+        Keep responses conversational and natural (2-3 sentences max).
+      `;
+
+      const contents = [
+        { role: "user" as const, parts: [{ text: systemPrompt }] },
+        ...messages.map((msg: any) => ({
+          role: msg.role === 'npc' ? 'model' as const : 'user' as const,
+          parts: [{ text: msg.content }]
+        }))
+      ];
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents
+      });
+
+      let resultText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!resultText) throw new Error("No response from AI");
+
+      let heartsChange = 0;
+      if (resultText.includes('[HEART_PENALTY:-1]')) {
+        heartsChange = -1;
+        resultText = resultText.replace('[HEART_PENALTY:-1]', '').trim();
+      }
+
+      res.json({ response: resultText, heartsChange });
+    } catch (err) {
+      console.error("World tour chat error:", err);
+      res.status(500).json({ message: "Failed to generate response" });
+    }
+  });
+
+  // === World Tour Evaluate Mission ===
+  app.post('/api/world-tour/evaluate', protect, async (req: any, res) => {
+    try {
+      const { destination, mission, messages, heartsRemaining } = req.body;
+      
+      const prompt = `
+        Evaluate this language learning roleplay conversation.
+        
+        MISSION: "${mission.scenario}"
+        OBJECTIVES: ${mission.objectives.map((o: string, i: number) => `${i + 1}. ${o}`).join('\n')}
+        CHARACTER: ${mission.characterName} (${mission.characterRole})
+        
+        CONVERSATION:
+        ${messages.map((m: any) => `${m.role.toUpperCase()}: ${m.content}`).join('\n')}
+        
+        HEARTS REMAINING: ${heartsRemaining}/5
+        
+        Evaluate and return ONLY valid JSON:
+        {
+          "success": true/false (did they complete the main mission objective?),
+          "objectivesCompleted": [true/false for each objective],
+          "feedback": "Brief encouraging feedback about their performance"
+        }
+        
+        Be generous in evaluation - if they made a genuine attempt at the mission objectives, count it as success.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      const resultText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!resultText) throw new Error("No response from AI");
+
+      const result = JSON.parse(resultText);
+      
+      if (result.success) {
+        const userId = req.user.claims.sub;
+        await storage.updateUserXp(userId, 100);
+      }
+
+      res.json(result);
+    } catch (err) {
+      console.error("World tour evaluation error:", err);
+      res.status(500).json({ 
+        success: false, 
+        objectivesCompleted: [],
+        feedback: "Unable to evaluate. Please try again." 
+      });
+    }
+  });
+
   return httpServer;
 }

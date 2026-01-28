@@ -69,6 +69,13 @@ export interface Destination {
   language: Language;
   flag: string;
   image: string;
+  mission: {
+    scenario: string;
+    characterName: string;
+    characterRole: string;
+    greeting: string;
+    objectives: string[];
+  };
 }
 
 export interface Character {
