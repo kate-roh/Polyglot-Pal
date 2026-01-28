@@ -5,7 +5,12 @@ import {
   Bookmark, 
   LogOut, 
   Zap,
-  Sparkles
+  Sparkles,
+  Globe,
+  Film,
+  BookOpen,
+  MessageCircle,
+  GraduationCap
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useUserStats } from "@/hooks/use-stats";
@@ -18,7 +23,12 @@ export function Navigation() {
   const { data: stats } = useUserStats();
 
   const navItems = [
-    { href: "/dashboard", label: "Studio", icon: LayoutDashboard },
+    { href: "/dashboard", label: "Home", icon: LayoutDashboard },
+    { href: "/world-tour", label: "World Tour", icon: Globe },
+    { href: "/media-studio", label: "Media Studio", icon: Film },
+    { href: "/grammar-lab", label: "Grammar Lab", icon: BookOpen },
+    { href: "/tutor", label: "Live Tutor", icon: MessageCircle },
+    { href: "/vocabulary", label: "Vocabulary", icon: GraduationCap },
     { href: "/history", label: "History", icon: History },
     { href: "/bookmarks", label: "Collection", icon: Bookmark },
   ];

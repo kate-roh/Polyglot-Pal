@@ -10,6 +10,10 @@ import HistoryPage from "@/pages/History";
 import BookmarksPage from "@/pages/Bookmarks";
 import Landing from "@/pages/Landing";
 import WorldTour from "@/pages/WorldTour";
+import MediaStudio from "@/pages/MediaStudio";
+import GrammarLab from "@/pages/GrammarLab";
+import LiveTutor from "@/pages/LiveTutor";
+import VocabularyPage from "@/pages/VocabularyPage";
 import { Loader2 } from "lucide-react";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -60,6 +64,18 @@ function Router() {
       </Route>
       <Route path="/world-tour">
         <ProtectedRoute component={WorldTour} />
+      </Route>
+      <Route path="/media-studio">
+        <ProtectedRoute component={MediaStudio} />
+      </Route>
+      <Route path="/grammar-lab">
+        <ProtectedRoute component={GrammarLab} />
+      </Route>
+      <Route path="/tutor">
+        <ProtectedRoute component={LiveTutor} />
+      </Route>
+      <Route path="/vocabulary">
+        <ProtectedRoute component={VocabularyPage} />
       </Route>
       <Route path="/history">
         <ProtectedRoute component={HistoryPage} />

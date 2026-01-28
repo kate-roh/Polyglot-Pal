@@ -1,0 +1,295 @@
+import { useState, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { Upload, Play, FileText, Brain, Loader2, History, Trash2, Film, Volume2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Card } from '@/components/ui/card';
+import { useAnalyzeMedia } from '@/hooks/use-media';
+import { useHistory, useDeleteHistory } from '@/hooks/use-history';
+import { AnalysisDisplay } from '@/components/AnalysisDisplay';
+import { type AnalysisResult } from '@shared/schema';
+import { Navigation } from '@/components/Navigation';
+
+type TabType = 'youtube' | 'file' | 'manual';
+
+interface FileItem {
+  id: string;
+  file: File;
+}
+
+export default function MediaStudio() {
+  const [activeTab, setActiveTab] = useState<TabType>('youtube');
+  const [input, setInput] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
+  const [selectedResult, setSelectedResult] = useState<AnalysisResult | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState('');
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const { mutate: analyze, isPending: loading } = useAnalyzeMedia();
+  const { data: history = [] } = useHistory();
+  const { mutate: deleteHistory } = useDeleteHistory();
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newFiles: FileItem[] = [];
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].size > 200 * 1024 * 1024) {
+        alert(`File ${files[i].name} is too large. Please use files under 200MB.`);
+        continue;
+      }
+      newFiles.push({ id: Math.random().toString(36).substr(2, 9), file: files[i] });
+    }
+    setSelectedFiles(prev => [...prev, ...newFiles]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeFile = (id: string) => {
+    setSelectedFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleAnalyze = async () => {
+    if (activeTab === 'youtube' && !input.trim()) return;
+    if (activeTab === 'file' && selectedFiles.length === 0) return;
+    if (activeTab === 'manual' && !input.trim()) return;
+
+    setProgress(10);
+    setStatusMessage("Connecting to AI model...");
+    
+    let content = input;
+    let mimeType: string | undefined;
+    let title = 'Analysis';
+
+    if (activeTab === 'youtube') {
+      content = input.trim();
+      title = 'YouTube Session';
+    } else if (activeTab === 'file') {
+      setProgress(20);
+      setStatusMessage("Reading file content...");
+      const file = selectedFiles[0]?.file;
+      if (file) {
+        mimeType = file.type;
+        title = file.name;
+        try {
+          content = await readFileAsBase64(file);
+          setProgress(40);
+          setStatusMessage("Sending to AI...");
+        } catch (err) {
+          alert("Failed to read file");
+          return;
+        }
+      }
+    } else {
+      title = 'Manual Entry';
+    }
+
+    analyze({
+      type: activeTab,
+      content,
+      title,
+      mimeType
+    }, {
+      onSuccess: (result) => {
+        setProgress(100);
+        setSelectedResult(result);
+        setSelectedFiles([]);
+        setInput('');
+      },
+      onError: (error) => {
+        alert(error instanceof Error ? error.message : "Analysis failed");
+      }
+    });
+  };
+
+  if (selectedResult) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="p-4 md:p-8 max-w-5xl mx-auto">
+          <Button 
+            variant="ghost" 
+            onClick={() => setSelectedResult(null)}
+            className="mb-4"
+            data-testid="button-back"
+          >
+            Back to Studio
+          </Button>
+          <AnalysisDisplay data={selectedResult} sourceType={activeTab} />
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Navigation />
+      <main className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 pb-32">
+        {loading && (
+          <div className="fixed inset-0 z-[250] bg-background/98 flex flex-col items-center justify-center p-8 text-center">
+            <div className="w-full max-w-sm space-y-8">
+              <div className="relative flex items-center justify-center">
+                <div className="w-32 h-32 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <p className="text-3xl font-black text-foreground">{Math.round(progress)}%</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-foreground font-bold text-lg">{statusMessage}</p>
+                <p className="text-primary/60 text-xs font-bold uppercase tracking-widest animate-pulse">Deep Neural Processing</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <header className="text-center">
+          <h2 className="text-3xl font-black uppercase text-foreground tracking-tighter mb-2">Media Studio</h2>
+          <p className="text-muted-foreground text-sm">Transform any media into learning material with AI</p>
+        </header>
+
+        <Card className="glass-card rounded-3xl p-5 md:p-10 border border-border/50">
+          <div className="flex p-1 bg-muted/50 rounded-2xl mb-8 border border-border/50">
+            {(['youtube', 'file', 'manual'] as TabType[]).map(t => (
+              <button 
+                key={t} 
+                onClick={() => setActiveTab(t)} 
+                className={`flex-1 py-4 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === t ? 'bg-primary text-primary-foreground shadow-lg' : 'text-muted-foreground hover:text-foreground'}`}
+                data-testid={`tab-${t}`}
+              >
+                {t === 'youtube' && <Play className="w-4 h-4 inline mr-2" />}
+                {t === 'file' && <Upload className="w-4 h-4 inline mr-2" />}
+                {t === 'manual' && <FileText className="w-4 h-4 inline mr-2" />}
+                {t}
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-6">
+            {activeTab === 'youtube' && (
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-2">YouTube URL</label>
+                <Input 
+                  type="text" 
+                  value={input} 
+                  onChange={e => setInput(e.target.value)} 
+                  placeholder="https://www.youtube.com/watch?v=..." 
+                  className="bg-muted/50 border-border rounded-2xl p-5 text-foreground"
+                  data-testid="input-youtube-url"
+                />
+                <p className="text-xs text-muted-foreground px-2">* AI will search and analyze the video information</p>
+              </div>
+            )}
+            
+            {activeTab === 'file' && (
+              <div className="space-y-4">
+                <div 
+                  onClick={() => fileInputRef.current?.click()} 
+                  className="border-2 border-dashed border-border rounded-3xl p-10 md:p-20 text-center hover:border-primary/50 transition-all cursor-pointer group bg-muted/20"
+                >
+                  <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileChange} accept="video/*,audio/*" />
+                  <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
+                    <Film className="w-8 h-8 text-primary" />
+                  </div>
+                  <h4 className="text-foreground font-bold text-lg mb-2">Upload your files</h4>
+                  <p className="text-xs text-muted-foreground uppercase tracking-widest">Video/Audio files under 200MB recommended</p>
+                </div>
+
+                {selectedFiles.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto">
+                    {selectedFiles.map(f => (
+                      <div key={f.id} className="flex items-center justify-between p-4 bg-muted/50 rounded-2xl border border-border/50">
+                        <div className="flex items-center gap-4 min-w-0">
+                          {f.file.type.startsWith('video') ? <Film className="w-5 h-5 text-primary" /> : <Volume2 className="w-5 h-5 text-primary" />}
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-foreground truncate max-w-[140px]">{f.file.name}</p>
+                            <p className="text-xs text-muted-foreground font-bold uppercase">{Math.round(f.file.size / 1024 / 1024)}MB</p>
+                          </div>
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={() => removeFile(f.id)} className="text-muted-foreground hover:text-destructive">
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {activeTab === 'manual' && (
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-2">Text Content</label>
+                <Textarea 
+                  value={input} 
+                  onChange={e => setInput(e.target.value)} 
+                  placeholder="Paste text to analyze..." 
+                  className="bg-muted/50 border-border rounded-2xl p-5 text-foreground h-40 resize-none"
+                  data-testid="input-manual-text"
+                />
+              </div>
+            )}
+            
+            <Button 
+              onClick={handleAnalyze} 
+              disabled={loading || (activeTab === 'file' ? selectedFiles.length === 0 : !input.trim())} 
+              className="w-full py-6 rounded-3xl font-bold uppercase tracking-widest text-sm"
+              data-testid="button-analyze"
+            >
+              {loading ? <Loader2 className="w-5 h-5 mr-3 animate-spin" /> : <Brain className="w-5 h-5 mr-3" />}
+              {loading ? "Analyzing..." : "Start Analysis"}
+            </Button>
+          </div>
+        </Card>
+
+        {history.length > 0 && (
+          <section className="space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-3 px-2 text-muted-foreground">
+              <History className="w-4 h-4 text-primary" /> Recent Sessions
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {history.slice(0, 6).map((item: any) => (
+                <Card 
+                  key={item.id} 
+                  onClick={() => setSelectedResult(item.result)}
+                  className="glass-card p-4 rounded-3xl border border-border/50 hover:border-primary/30 transition-all cursor-pointer flex items-center gap-4 group"
+                  data-testid={`history-item-${item.id}`}
+                >
+                  <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
+                    {item.type === 'youtube' ? <Play className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-sm text-foreground truncate">{item.title}</p>
+                    <p className="text-xs text-muted-foreground font-bold uppercase mt-1">{new Date(item.createdAt).toLocaleDateString()}</p>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={(e) => { e.stopPropagation(); deleteHistory(item.id); }} 
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
+      </main>
+    </div>
+  );
+}

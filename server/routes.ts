@@ -45,11 +45,19 @@ export async function registerRoutes(
           "culturalNotes": ["..."]
         }
         
-        If the content is a YouTube URL, analyze the likely content of that video (or if you can't access it, give a generic language lesson based on the title).
-        If the content is Base64, assume it's an audio/video file transcript or just analyze the text if it's text.
+        If the content is a YouTube URL, analyze the likely content of that video based on the URL/title.
+        For manual text, analyze the provided text directly.
+        For files, the content may be base64 encoded - try to understand and analyze it.
       `;
 
-      const userPrompt = `Analyze this ${type}: ${type === 'youtube' ? content : (title || 'Content')}`;
+      let userPrompt: string;
+      if (type === 'youtube') {
+        userPrompt = `Analyze this YouTube video URL for language learning: ${content}`;
+      } else if (type === 'file') {
+        userPrompt = `Analyze this file content (${title || 'file'}) for language learning. Content: ${content.substring(0, 10000)}`;
+      } else {
+        userPrompt = `Analyze this text for language learning:\n\n${content}`;
+      }
 
       // Call Gemini
       const response = await ai.models.generateContent({
@@ -143,6 +151,111 @@ export async function registerRoutes(
   app.delete(api.bookmarks.delete.path, protect, async (req: any, res) => {
     await storage.deleteBookmark(Number(req.params.id), req.user.claims.sub);
     res.status(204).send();
+  });
+
+  // === Grammar Lesson ===
+  app.post('/api/grammar/lesson', protect, async (req: any, res) => {
+    try {
+      const { language, level } = req.body;
+      
+      const prompt = `
+        Generate a grammar lesson for ${language} learners at level ${level || 1}.
+        Output ONLY valid JSON matching this schema:
+        {
+          "topic": "Grammar concept name",
+          "explanation": "Detailed explanation of the grammar rule",
+          "examples": [
+            {"original": "Sentence in ${language}", "translation": "English translation"}
+          ],
+          "exercises": [
+            {"question": "Multiple choice question", "options": ["Option A", "Option B", "Option C", "Option D"], "answer": "Correct option", "explanation": "Why this is correct"}
+          ]
+        }
+        Include 3-4 examples and 3-4 exercises.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      const resultText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!resultText) throw new Error("No response from AI");
+
+      res.json(JSON.parse(resultText));
+    } catch (err) {
+      console.error("Grammar lesson error:", err);
+      res.status(500).json({ message: "Failed to generate lesson" });
+    }
+  });
+
+  // === Vocabulary Cards ===
+  app.post('/api/vocabulary/cards', protect, async (req: any, res) => {
+    try {
+      const { language, topic, count = 10 } = req.body;
+      
+      const prompt = `
+        Generate ${count} vocabulary flashcards for learning ${language}${topic ? ` about ${topic}` : ''}.
+        Output ONLY valid JSON matching this schema:
+        {
+          "cards": [
+            {"word": "Word in ${language}", "meaning": "English meaning", "pronunciation": "Phonetic/romanization", "example": "Example sentence"}
+          ]
+        }
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      const resultText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!resultText) throw new Error("No response from AI");
+
+      res.json(JSON.parse(resultText));
+    } catch (err) {
+      console.error("Vocabulary cards error:", err);
+      res.status(500).json({ message: "Failed to generate vocabulary" });
+    }
+  });
+
+  // === AI Chat/Tutor ===
+  app.post('/api/tutor/message', protect, async (req: any, res) => {
+    try {
+      const { message, language, conversationHistory = [] } = req.body;
+      
+      const systemPrompt = `
+        You are a friendly ${language} language tutor. Help the user practice ${language}.
+        - Respond in ${language} with an English translation in parentheses
+        - Correct any mistakes gently
+        - Keep responses conversational and encouraging
+        - If the user writes in English, still respond in ${language} and help them translate
+      `;
+
+      const contents = [
+        { role: "user" as const, parts: [{ text: systemPrompt }] },
+        ...conversationHistory.map((msg: any) => ({
+          role: msg.role as "user" | "model",
+          parts: [{ text: msg.content }]
+        })),
+        { role: "user" as const, parts: [{ text: message }] }
+      ];
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents
+      });
+
+      const resultText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!resultText) throw new Error("No response from AI");
+
+      res.json({ response: resultText });
+    } catch (err) {
+      console.error("Tutor message error:", err);
+      res.status(500).json({ message: "Failed to generate response" });
+    }
   });
 
   return httpServer;
