@@ -194,12 +194,20 @@ export const videoSegmentSchema = z.object({
 });
 
 export const videoAnalysisResultSchema = z.object({
-  platform: z.enum(['youtube', 'tiktok', 'instagram', 'other']),
-  videoId: z.string(),
-  videoUrl: z.string(),
-  videoTitle: z.string(),
+  platform: z.enum(['youtube', 'tiktok', 'instagram', 'other']).optional(),
+  videoId: z.string().optional(),
+  videoUrl: z.string().optional(),
+  videoTitle: z.string().optional(),
   summary: z.string(), // Learning overview
+  cefrLevel: z.string().optional(), // A1, A2, B1, B2, C1, C2
+  cefrExplanation: z.string().optional(), // Why this CEFR level
   segments: z.array(videoSegmentSchema),
+  grammar: z.array(z.object({
+    point: z.string(),
+    explanation: z.string(),
+    example: z.string().optional()
+  })).optional(),
+  culturalNotes: z.array(z.string()).optional(),
   // Learning sections
   roleplayMission: z.object({
     scenario: z.string(),

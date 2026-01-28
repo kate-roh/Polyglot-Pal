@@ -241,6 +241,8 @@ export async function registerRoutes(
       let textContent = content;
       
       // Check if file is audio/video and needs transcription first
+      let transcriptionSegments: { id: number; start: number; end: number; text: string }[] = [];
+      
       if (type === 'file' && mimeType) {
         const isAudioVideo = mimeType.startsWith('audio/') || mimeType.startsWith('video/');
         
@@ -249,7 +251,7 @@ export async function registerRoutes(
             console.log(`Transcribing ${mimeType} file: ${title}`);
             console.log(`Content length: ${content.length} chars`);
             
-            const { speechToText, ensureCompatibleFormat, detectAudioFormat } = await import('./replit_integrations/audio/client');
+            const { speechToTextWithTimestamps, ensureCompatibleFormat, detectAudioFormat } = await import('./replit_integrations/audio/client');
             
             // Convert base64 to buffer
             const rawBuffer = Buffer.from(content, "base64");
@@ -262,8 +264,8 @@ export async function registerRoutes(
             const { buffer: audioBuffer, format: inputFormat } = await ensureCompatibleFormat(rawBuffer);
             console.log(`Converted to ${inputFormat}, size: ${audioBuffer.length} bytes`);
             
-            // Transcribe audio to text
-            const transcript = await speechToText(audioBuffer, inputFormat);
+            // Transcribe audio to text WITH TIMESTAMPS
+            const { text: transcript, segments } = await speechToTextWithTimestamps(audioBuffer, inputFormat);
             
             if (!transcript || transcript.trim().length === 0) {
               return res.status(400).json({ 
@@ -272,7 +274,8 @@ export async function registerRoutes(
             }
             
             textContent = transcript;
-            console.log(`Transcription successful: ${transcript.substring(0, 100)}...`);
+            transcriptionSegments = segments;
+            console.log(`Transcription successful with ${segments.length} segments: ${transcript.substring(0, 100)}...`);
           } catch (transcribeErr: any) {
             console.error("Transcription error:", transcribeErr);
             console.error("Error stack:", transcribeErr?.stack);
@@ -284,51 +287,119 @@ export async function registerRoutes(
         }
       }
       
-      // Construct prompt for Gemini
-      const systemPrompt = `
-        You are an expert language tutor. Analyze the provided content and extract learning materials.
-        Output ONLY valid JSON matching this schema:
-        {
-          "summary": "Brief summary of the content",
-          "vocabulary": [{"word": "single word", "meaning": "definition", "example": "example sentence"}],
-          "phrases": [{"phrase": "useful expression/idiom like 'get it right', 'in a row', 'start to begin'", "meaning": "what it means", "usage": "example usage in context"}],
-          "grammar": [{"point": "grammar concept", "explanation": "explanation", "example": "example sentence"}],
-          "keySentences": [{"sentence": "full sentence from content", "translation": "translation", "nuance": "context/nuance"}],
-          "culturalNotes": ["cultural context notes"]
-        }
+      // Check if this is an audio/video file with segments
+      const isAudioVideoWithSegments = type === 'file' && mimeType && 
+        (mimeType.startsWith('audio/') || mimeType.startsWith('video/')) && 
+        transcriptionSegments.length > 0;
+      
+      let analysisResult: any;
+      
+      if (isAudioVideoWithSegments) {
+        // For audio/video files: analyze each segment with timestamp
+        const segmentPrompt = `
+You are an expert language tutor. Analyze each sentence segment and provide learning materials.
+Output ONLY valid JSON matching this schema:
+{
+  "summary": "Brief summary of the content",
+  "cefrLevel": "A1|A2|B1|B2|C1|C2",
+  "cefrExplanation": "Why this content is rated at this CEFR level",
+  "segments": [
+    {
+      "timestamp": "MM:SS",
+      "timestampSeconds": 0,
+      "sentence": "original sentence",
+      "translation": "Korean translation",
+      "expressionNote": "explanation of idioms/expressions used in Korean",
+      "vocabulary": [{"word": "single word", "meaning": "Korean meaning"}],
+      "phrases": [{"phrase": "expression/idiom", "meaning": "Korean meaning"}]
+    }
+  ],
+  "grammar": [{"point": "grammar concept", "explanation": "explanation in Korean", "example": "example sentence"}],
+  "culturalNotes": ["cultural context notes in Korean"]
+}
+
+IMPORTANT:
+- Assess the CEFR level (A1-C2) based on vocabulary complexity, grammar structures, and content difficulty
+- Each segment should have its own timestamp, sentence, translation, and extracted vocabulary/phrases
+- "vocabulary" contains SINGLE WORDS only
+- "phrases" contains MULTI-WORD EXPRESSIONS (idioms, collocations, phrasal verbs)
+- All translations and explanations should be in Korean
+`;
+
+        // Helper to format seconds to MM:SS
+        const formatTS = (seconds: number) => {
+          const mins = Math.floor(seconds / 60);
+          const secs = Math.floor(seconds % 60);
+          return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        };
         
-        IMPORTANT: 
-        - "vocabulary" should only contain SINGLE WORDS
-        - "phrases" should contain MULTI-WORD EXPRESSIONS like idioms, collocations, phrasal verbs (e.g., "get it right", "in quick succession", "take a look at")
-      `;
+        const segmentsData = transcriptionSegments.map(seg => ({
+          timestamp: formatTS(seg.start),
+          timestampSeconds: seg.start,
+          sentence: seg.text
+        }));
 
-      let userPrompt: string;
-      if (type === 'file') {
-        // For audio/video, textContent is now the transcript
-        // For other files, use first 10000 chars
-        const isTranscribed = mimeType && (mimeType.startsWith('audio/') || mimeType.startsWith('video/'));
-        userPrompt = isTranscribed 
-          ? `Analyze this transcribed audio/video content for language learning:\n\n${textContent}`
-          : `Analyze this file content (${title || 'file'}) for language learning. Content: ${textContent.substring(0, 10000)}`;
+        const userPrompt = `Analyze these transcribed audio segments for language learning. Each segment has a timestamp:
+
+${JSON.stringify(segmentsData, null, 2)}`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [
+            { role: "user", parts: [{ text: segmentPrompt }, { text: userPrompt }] }
+          ],
+          config: {
+            responseMimeType: "application/json"
+          }
+        });
+
+        const resultText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!resultText) throw new Error("No response from AI");
+
+        analysisResult = JSON.parse(resultText);
+        analysisResult.isVideoAnalysis = true; // Mark as video-style analysis
+        
       } else {
-        userPrompt = `Analyze this text for language learning:\n\n${textContent}`;
-      }
+        // Standard text analysis
+        const systemPrompt = `
+          You are an expert language tutor. Analyze the provided content and extract learning materials.
+          Output ONLY valid JSON matching this schema:
+          {
+            "summary": "Brief summary of the content",
+            "vocabulary": [{"word": "single word", "meaning": "definition", "example": "example sentence"}],
+            "phrases": [{"phrase": "useful expression/idiom like 'get it right', 'in a row', 'start to begin'", "meaning": "what it means", "usage": "example usage in context"}],
+            "grammar": [{"point": "grammar concept", "explanation": "explanation", "example": "example sentence"}],
+            "keySentences": [{"sentence": "full sentence from content", "translation": "translation", "nuance": "context/nuance"}],
+            "culturalNotes": ["cultural context notes"]
+          }
+          
+          IMPORTANT: 
+          - "vocabulary" should only contain SINGLE WORDS
+          - "phrases" should contain MULTI-WORD EXPRESSIONS like idioms, collocations, phrasal verbs (e.g., "get it right", "in quick succession", "take a look at")
+        `;
 
-      // Call Gemini
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          { role: "user", parts: [{ text: systemPrompt }, { text: userPrompt }] }
-        ],
-        config: {
-          responseMimeType: "application/json"
+        let userPrompt: string;
+        if (type === 'file') {
+          userPrompt = `Analyze this file content (${title || 'file'}) for language learning. Content: ${textContent.substring(0, 10000)}`;
+        } else {
+          userPrompt = `Analyze this text for language learning:\n\n${textContent}`;
         }
-      });
 
-      const resultText = response.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!resultText) throw new Error("No response from AI");
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [
+            { role: "user", parts: [{ text: systemPrompt }, { text: userPrompt }] }
+          ],
+          config: {
+            responseMimeType: "application/json"
+          }
+        });
 
-      const analysisResult = JSON.parse(resultText);
+        const resultText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!resultText) throw new Error("No response from AI");
+
+        analysisResult = JSON.parse(resultText);
+      }
 
       // Auto-save to history
       const userId = req.user.claims.sub;

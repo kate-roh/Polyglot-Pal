@@ -234,6 +234,16 @@ export async function textToSpeechStream(
 }
 
 /**
+ * Transcription segment with timestamp
+ */
+export interface TranscriptionSegment {
+  id: number;
+  start: number;
+  end: number;
+  text: string;
+}
+
+/**
  * Speech-to-Text: Transcribes audio using dedicated transcription model.
  * Uses gpt-4o-mini-transcribe for accurate transcription.
  */
@@ -257,6 +267,52 @@ export async function speechToText(
       model: "gpt-4o-mini-transcribe",
     });
     return response.text;
+  }
+}
+
+/**
+ * Speech-to-Text with Timestamps: Returns full transcription with segment timestamps.
+ * Uses whisper-1 with verbose_json format for segment-level timestamps.
+ */
+export async function speechToTextWithTimestamps(
+  audioBuffer: Buffer,
+  format: "wav" | "mp3" | "webm" = "wav"
+): Promise<{ text: string; segments: TranscriptionSegment[] }> {
+  const file = await toFile(audioBuffer, `audio.${format}`);
+  
+  try {
+    const response = await openai.audio.transcriptions.create({
+      file,
+      model: "whisper-1",
+      response_format: "verbose_json",
+      timestamp_granularities: ["segment"],
+    });
+    
+    const verboseResponse = response as any;
+    const segments: TranscriptionSegment[] = (verboseResponse.segments || []).map((seg: any, idx: number) => ({
+      id: idx,
+      start: seg.start,
+      end: seg.end,
+      text: seg.text?.trim() || "",
+    }));
+    
+    return {
+      text: verboseResponse.text || "",
+      segments,
+    };
+  } catch (err: any) {
+    console.log("whisper-1 with timestamps failed:", err?.message);
+    // Fallback: just get plain text and create single segment
+    const plainText = await speechToText(audioBuffer, format);
+    return {
+      text: plainText,
+      segments: [{
+        id: 0,
+        start: 0,
+        end: 0,
+        text: plainText,
+      }],
+    };
   }
 }
 

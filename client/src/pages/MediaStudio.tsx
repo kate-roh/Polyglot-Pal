@@ -238,6 +238,63 @@ export default function MediaStudio() {
       }
     };
 
+    // Check if this is a video-style analysis with segments (uploaded audio/video)
+    const resultWithSegments = selectedResult as any;
+    const isVideoStyleAnalysis = resultWithSegments.isVideoAnalysis && resultWithSegments.segments;
+
+    if (isVideoStyleAnalysis) {
+      // Convert to VideoAnalysisResult format
+      const videoStyleResult: VideoAnalysisResult = {
+        summary: resultWithSegments.summary,
+        cefrLevel: resultWithSegments.cefrLevel,
+        cefrExplanation: resultWithSegments.cefrExplanation,
+        segments: resultWithSegments.segments,
+        grammar: resultWithSegments.grammar || [],
+        culturalNotes: resultWithSegments.culturalNotes || [],
+      };
+
+      return (
+        <div className="min-h-screen bg-background">
+          <Navigation />
+          <main className="p-4 md:p-8 max-w-5xl mx-auto">
+            <Button 
+              variant="ghost" 
+              onClick={() => {
+                setSelectedResult(null);
+                if (uploadedVideoUrl) {
+                  URL.revokeObjectURL(uploadedVideoUrl);
+                  setUploadedVideoUrl(null);
+                }
+              }}
+              className="mb-4"
+              data-testid="button-back"
+            >
+              ← 스튜디오로 돌아가기
+            </Button>
+            
+            {uploadedVideoUrl && (
+              <div className="mb-6">
+                <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black">
+                  <video
+                    ref={uploadedVideoRef}
+                    src={uploadedVideoUrl}
+                    className="w-full h-full"
+                    controls
+                    data-testid="uploaded-video-player"
+                  />
+                </div>
+              </div>
+            )}
+            
+            <VideoAnalysisDisplay 
+              data={videoStyleResult} 
+              onSeek={uploadedVideoUrl ? handleSeekUploadedVideo : undefined}
+            />
+          </main>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
@@ -436,7 +493,8 @@ export default function MediaStudio() {
                     variant="ghost" 
                     size="icon"
                     onClick={(e) => { e.stopPropagation(); deleteHistory(item.id); }} 
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+                    className="text-muted-foreground hover:text-destructive md:opacity-0 md:group-hover:opacity-100"
+                    data-testid={`button-delete-history-${item.id}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>

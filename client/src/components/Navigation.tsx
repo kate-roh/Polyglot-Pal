@@ -40,8 +40,8 @@ export function Navigation() {
   ];
 
   return (
-    <div className="w-full md:w-64 flex-shrink-0 flex flex-col h-full glass-panel md:border-r border-b md:border-b-0 border-white/10 z-20">
-      <div className="p-6">
+    <div className="w-full md:w-64 flex-shrink-0 flex flex-col md:h-full max-h-screen glass-panel md:border-r border-b md:border-b-0 border-white/10 z-20 overflow-y-auto">
+      <div className="p-4 md:p-6">
         <div className="flex items-center gap-3 mb-8">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/25">
             <Sparkles className="text-white w-6 h-6" />

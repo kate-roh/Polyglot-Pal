@@ -10,11 +10,12 @@ import type { VideoAnalysisResult, VideoSegment } from '@shared/schema';
 
 interface VideoAnalysisDisplayProps {
   data: VideoAnalysisResult;
+  onSeek?: (seconds: number) => void;
 }
 
 type TabType = 'segments' | 'roleplay' | 'quiz' | 'conversation';
 
-export function VideoAnalysisDisplay({ data }: VideoAnalysisDisplayProps) {
+export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps) {
   const [activeTab, setActiveTab] = useState<TabType>('segments');
   const [playingTTS, setPlayingTTS] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
@@ -24,14 +25,21 @@ export function VideoAnalysisDisplay({ data }: VideoAnalysisDisplayProps) {
   const { toast } = useToast();
 
   const isYoutube = data.platform === 'youtube';
+  const isUploadedFile = !data.platform && !data.videoId;
 
   const seekToTimestamp = (seconds: number) => {
+    // If external onSeek provided (for uploaded files), use that
+    if (onSeek) {
+      onSeek(seconds);
+      return;
+    }
+    // Otherwise use YouTube API
     if (isYoutube && playerRef.current?.contentWindow) {
       playerRef.current.contentWindow.postMessage(
         JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }),
         '*'
       );
-    } else {
+    } else if (data.videoUrl) {
       window.open(`${data.videoUrl}&t=${seconds}s`, '_blank');
     }
   };
@@ -67,10 +75,10 @@ export function VideoAnalysisDisplay({ data }: VideoAnalysisDisplayProps) {
     try {
       await apiRequest('POST', '/api/bookmarks', {
         type,
-        sourceType: 'youtube',
+        sourceType: isUploadedFile ? 'file' : (data.platform || 'video'),
         content,
         meaning,
-        context: context || data.videoUrl
+        context: context || data.videoUrl || 'Uploaded file'
       });
       setSavedItems(prev => new Set(prev).add(key));
       queryClient.invalidateQueries({ queryKey: ['/api/bookmarks'] });
@@ -107,7 +115,8 @@ export function VideoAnalysisDisplay({ data }: VideoAnalysisDisplayProps) {
 
   return (
     <div className="space-y-6">
-      {isYoutube ? (
+      {/* Only show video player for YouTube - uploaded files show player separately */}
+      {isYoutube && (
         <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black">
           <iframe
             ref={playerRef}
@@ -118,7 +127,10 @@ export function VideoAnalysisDisplay({ data }: VideoAnalysisDisplayProps) {
             data-testid="youtube-player"
           />
         </div>
-      ) : (
+      )}
+      
+      {/* Show external link card for TikTok/Instagram */}
+      {!isYoutube && !isUploadedFile && data.videoUrl && (
         <Card className="p-6 rounded-2xl text-center">
           <div className={`w-16 h-16 ${getPlatformColor()} rounded-2xl flex items-center justify-center mx-auto mb-4`}>
             <ExternalLink className="w-8 h-8 text-white" />
@@ -135,6 +147,20 @@ export function VideoAnalysisDisplay({ data }: VideoAnalysisDisplayProps) {
             <ExternalLink className="w-4 h-4" />
             {getPlatformName()}에서 열기
           </Button>
+        </Card>
+      )}
+
+      {/* CEFR Level Display */}
+      {data.cefrLevel && (
+        <Card className="p-4 rounded-2xl border-blue-500/20 bg-blue-500/5">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-bold rounded-lg text-sm">
+              CEFR {data.cefrLevel}
+            </div>
+            {data.cefrExplanation && (
+              <p className="text-muted-foreground text-sm flex-1">{data.cefrExplanation}</p>
+            )}
+          </div>
         </Card>
       )}
 
