@@ -10,10 +10,14 @@ import {
   Film,
   BookOpen,
   MessageCircle,
-  GraduationCap
+  GraduationCap,
+  Target,
+  TrendingUp,
+  TrendingDown
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useUserStats } from "@/hooks/use-stats";
+import { useAllProficiencies, CEFR_COLORS, CEFR_LABELS } from "@/hooks/use-proficiency";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -21,9 +25,11 @@ export function Navigation() {
   const [location] = useLocation();
   const { logout } = useAuth();
   const { data: stats } = useUserStats();
+  const { data: proficiencies } = useAllProficiencies();
 
   const navItems = [
     { href: "/dashboard", label: "Home", icon: LayoutDashboard },
+    { href: "/level-test", label: "Level Test", icon: Target },
     { href: "/world-tour", label: "World Tour", icon: Globe },
     { href: "/media-studio", label: "Media Studio", icon: Film },
     { href: "/grammar-lab", label: "Grammar Lab", icon: BookOpen },
@@ -46,7 +52,7 @@ export function Navigation() {
         </div>
 
         {stats && (
-          <div className="mb-8 p-4 rounded-xl bg-secondary/50 border border-white/5 backdrop-blur-sm">
+          <div className="mb-4 p-4 rounded-xl bg-secondary/50 border border-white/5 backdrop-blur-sm">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Level {stats.level}</span>
               <div className="flex items-center gap-1 text-yellow-400">
@@ -63,6 +69,40 @@ export function Navigation() {
             <div className="flex justify-end">
               <span className="text-[10px] text-muted-foreground">{stats.xp} XP</span>
             </div>
+          </div>
+        )}
+
+        {proficiencies && proficiencies.length > 0 ? (
+          <div className="mb-8 p-3 rounded-xl bg-secondary/30 border border-white/5">
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">CEFR Levels</div>
+            <div className="space-y-2">
+              {proficiencies.slice(0, 3).map((p) => (
+                <div key={p.languageCode} className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">{p.languageCode.toUpperCase()}</span>
+                  <div className="flex items-center gap-2">
+                    <div className={cn(
+                      "px-2 py-0.5 rounded text-[10px] font-bold text-white",
+                      `bg-gradient-to-r ${CEFR_COLORS[p.cefrLevel] || 'from-gray-400 to-gray-600'}`
+                    )}>
+                      {p.cefrLevel}
+                    </div>
+                    <div className="w-12 bg-black/20 rounded-full h-1.5">
+                      <div 
+                        className={cn("h-1.5 rounded-full transition-all", `bg-gradient-to-r ${CEFR_COLORS[p.cefrLevel] || 'from-gray-400 to-gray-600'}`)}
+                        style={{ width: `${p.score || 50}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="mb-8 p-3 rounded-xl bg-secondary/30 border border-white/5">
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">CEFR Level</div>
+            <Link href="/level-test">
+              <div className="text-xs text-primary hover:underline cursor-pointer" data-testid="link-take-level-test">Take a level test to get started</div>
+            </Link>
           </div>
         )}
 

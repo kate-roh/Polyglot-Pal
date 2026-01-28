@@ -28,7 +28,205 @@ export async function registerRoutes(
   // 2. Protected Routes Middleware
   const protect = isAuthenticated;
 
-  // === Media Analysis Endpoint ===
+  // === Video Analysis Endpoint (YouTube, TikTok, Instagram) ===
+  app.post('/api/video/analyze', protect, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { url, languageCode } = req.body;
+      if (!url) {
+        return res.status(400).json({ message: "Video URL required" });
+      }
+
+      // Get user's CEFR level
+      let cefrLevel = 'A1';
+      if (userId && languageCode) {
+        const proficiency = await storage.getLanguageProficiencyByCode(userId, languageCode);
+        if (proficiency) {
+          cefrLevel = proficiency.cefrLevel;
+        }
+      }
+
+      // Detect platform and extract video ID
+      let platform: 'youtube' | 'tiktok' | 'instagram' | 'other' = 'other';
+      let videoId = '';
+
+      if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        platform = 'youtube';
+        const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^&\s?]+)/);
+        videoId = match?.[1] || '';
+      } else if (url.includes('tiktok.com')) {
+        platform = 'tiktok';
+        const match = url.match(/\/video\/(\d+)|\/v\/(\d+)/);
+        videoId = match?.[1] || match?.[2] || url;
+      } else if (url.includes('instagram.com')) {
+        platform = 'instagram';
+        const match = url.match(/\/(reel|p)\/([A-Za-z0-9_-]+)/);
+        videoId = match?.[2] || url;
+      }
+
+      // CEFR level guidance for content complexity
+      const levelGuidance = {
+        'A1': 'Focus on basic vocabulary (100-500 most common words). Use very simple sentences. Provide detailed translations and explanations.',
+        'A2': 'Use simple, everyday vocabulary. Sentences can have basic connectors (and, but, because). Include common phrases.',
+        'B1': 'Include moderate vocabulary and idioms. Explanations can be more concise. Introduce some grammar patterns.',
+        'B2': 'Use varied vocabulary including less common words. Include cultural references and nuanced expressions.',
+        'C1': 'Include advanced vocabulary, idioms, and complex structures. Minimal hand-holding in explanations.',
+        'C2': 'Native-level complexity. Focus on subtle nuances, rare expressions, and cultural depth.'
+      };
+
+      const videoPrompt = `
+        You are an expert English language tutor helping Korean learners. 
+        Analyze this ${platform} video and create a comprehensive learning experience.
+        
+        Video URL: ${url}
+        Platform: ${platform}
+        
+        USER'S CEFR LEVEL: ${cefrLevel}
+        CONTENT ADJUSTMENT: ${levelGuidance[cefrLevel as keyof typeof levelGuidance] || levelGuidance['A1']}
+        
+        Output ONLY valid JSON matching this EXACT schema:
+        {
+          "platform": "${platform}",
+          "videoId": "${videoId}",
+          "videoUrl": "${url}",
+          "videoTitle": "Title/description of the video content",
+          "summary": "2-3 sentence learning overview in Korean explaining what learners will gain from this video",
+          "segments": [
+            {
+              "timestamp": "00:05",
+              "timestampSeconds": 5,
+              "sentence": "Original English sentence spoken in the video",
+              "translation": "Korean translation of the sentence",
+              "expressionNote": "Explanation of a key expression in Korean, e.g., \"'Seen in years'는 '수년 동안 본 것 중'이라는 의미로, 오랜만이라는 뉘앙스를 줍니다.\"",
+              "vocabulary": [{"word": "example", "meaning": "예시"}],
+              "phrases": [{"phrase": "for example", "meaning": "예를 들어"}]
+            }
+          ],
+          "roleplayMission": {
+            "scenario": "Scenario description in Korean related to the video topic",
+            "yourRole": "Your role description",
+            "npcRole": "NPC role description", 
+            "objective": "Mission objective",
+            "starterPrompt": "Starting prompt for the roleplay"
+          },
+          "quizQuestions": [
+            {
+              "question": "Quiz question in Korean about the video content",
+              "options": ["Option A", "Option B", "Option C", "Option D"],
+              "correctIndex": 0,
+              "explanation": "Explanation of the correct answer in Korean"
+            }
+          ],
+          "conversationPractice": [
+            {"speaker": "A", "line": "English line", "translation": "Korean translation"},
+            {"speaker": "B", "line": "Response line", "translation": "Korean translation"}
+          ]
+        }
+        
+        REQUIREMENTS:
+        1. For ${platform === 'tiktok' || platform === 'instagram' ? 'short videos (15-60 seconds), create 3-6 segments with timestamps every 5-15 seconds' : 'longer videos, create 5-10 segments with timestamps every 30-60 seconds'}
+        2. Each segment should have an interesting English sentence with Korean translation
+        3. Include expressionNote for key phrases/idioms with detailed Korean explanation
+        4. Extract 1-2 vocabulary words per segment (single words only)
+        5. Extract 1-2 phrases per segment (multi-word expressions like idioms, collocations)
+        6. Create 1 roleplay mission related to the video topic
+        7. Create 3-5 quiz questions testing comprehension
+        8. Create a 6-8 line conversation practice dialogue
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          { role: "user", parts: [{ text: videoPrompt }] }
+        ],
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+
+      const resultText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!resultText) throw new Error("No response from AI");
+
+      const analysisResult = JSON.parse(resultText);
+      
+      // Add CEFR level to response
+      analysisResult.userCefrLevel = cefrLevel;
+
+      // Auto-save to history
+      const historyUserId = req.user.claims.sub;
+      await storage.createHistory({
+        userId: historyUserId,
+        type: 'youtube', // Keep as youtube for history compatibility
+        title: analysisResult.videoTitle || `${platform} Session`,
+        originalContent: url,
+        result: analysisResult
+      });
+
+      // Award XP
+      await storage.updateUserXp(historyUserId, 75);
+      
+      // Update CEFR proficiency - video analysis counts as reading/listening practice
+      let proficiencyUpdate = null;
+      if (historyUserId && languageCode) {
+        const updateResult = await storage.updateProficiencyFromActivity(
+          historyUserId,
+          languageCode,
+          'media_video_analysis',
+          70, // Default performance for completing video analysis
+          `Analyzed ${platform} video: ${analysisResult.videoTitle?.substring(0, 50) || 'Video'}...`
+        );
+        proficiencyUpdate = {
+          newLevel: updateResult.proficiency.cefrLevel,
+          newScore: updateResult.proficiency.score,
+          scoreChange: updateResult.log.scoreChange
+        };
+      }
+
+      res.json({ ...analysisResult, proficiencyUpdate });
+
+    } catch (err) {
+      console.error("Video Analysis Error:", err);
+      res.status(500).json({ message: "Analysis failed", error: String(err) });
+    }
+  });
+
+  // === TTS Endpoint (OpenAI) ===
+  app.post('/api/tts', protect, async (req: any, res) => {
+    try {
+      const { text, voice = 'alloy' } = req.body;
+      if (!text) {
+        return res.status(400).json({ message: "Text required" });
+      }
+
+      const response = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.AI_INTEGRATIONS_OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'tts-1',
+          input: text.substring(0, 4096),
+          voice: voice,
+          response_format: 'mp3'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`TTS API error: ${response.status}`);
+      }
+
+      const audioBuffer = await response.arrayBuffer();
+      res.set('Content-Type', 'audio/mpeg');
+      res.send(Buffer.from(audioBuffer));
+
+    } catch (err) {
+      console.error("TTS Error:", err);
+      res.status(500).json({ message: "TTS failed" });
+    }
+  });
+
+  // === Media Analysis Endpoint (for file and manual) ===
   app.post(api.media.analyze.path, protect, async (req: any, res) => {
     try {
       const { type, content, title } = api.media.analyze.input.parse(req.body);
@@ -50,15 +248,12 @@ export async function registerRoutes(
         - "vocabulary" should only contain SINGLE WORDS
         - "phrases" should contain MULTI-WORD EXPRESSIONS like idioms, collocations, phrasal verbs (e.g., "get it right", "in quick succession", "take a look at")
         
-        If the content is a YouTube URL, analyze the likely content of that video based on the URL/title.
         For manual text, analyze the provided text directly.
         For files, the content may be base64 encoded - try to understand and analyze it.
       `;
 
       let userPrompt: string;
-      if (type === 'youtube') {
-        userPrompt = `Analyze this YouTube video URL for language learning: ${content}`;
-      } else if (type === 'file') {
+      if (type === 'file') {
         userPrompt = `Analyze this file content (${title || 'file'}) for language learning. Content: ${content.substring(0, 10000)}`;
       } else {
         userPrompt = `Analyze this text for language learning:\n\n${content}`;
@@ -86,7 +281,7 @@ export async function registerRoutes(
         userId,
         type,
         title: title || "Untitled Analysis",
-        originalContent: type === 'youtube' ? content : undefined,
+        originalContent: undefined,
         result: analysisResult
       });
 
@@ -314,12 +509,35 @@ export async function registerRoutes(
   // === World Tour Chat ===
   app.post('/api/world-tour/chat', protect, async (req: any, res) => {
     try {
-      const { destination, mission, language, messages, currentHearts } = req.body;
+      const userId = req.user?.id;
+      const { destination, mission, language, messages, currentHearts, languageCode } = req.body;
+      
+      // Get user's CEFR level for the language
+      let cefrLevel = 'A1';
+      if (userId && languageCode) {
+        const proficiency = await storage.getLanguageProficiencyByCode(userId, languageCode);
+        if (proficiency) {
+          cefrLevel = proficiency.cefrLevel;
+        }
+      }
+      
+      // Adjust language complexity based on CEFR level
+      const levelGuidance = {
+        'A1': 'Use VERY simple words and SHORT sentences (3-5 words). Speak slowly. Use basic vocabulary only. Example: "Hello! Coffee?" "Yes, one please."',
+        'A2': 'Use simple sentences with basic connectors (and, but, because). Keep vocabulary common and everyday. Example: "Good morning! Would you like a coffee? It\'s fresh today."',
+        'B1': 'Use complete sentences with moderate complexity. Include some idioms and colloquial expressions. Can discuss familiar topics naturally.',
+        'B2': 'Use natural, fluent speech with varied vocabulary. Include cultural expressions and subtle nuances. Speak at normal pace.',
+        'C1': 'Use sophisticated language with complex structures. Include idioms, slang, and cultural references freely. Challenge the learner naturally.',
+        'C2': 'Use native-level complexity including rare words, cultural subtleties, and implicit meanings. No simplification needed.'
+      };
       
       const systemPrompt = `
         You are "${mission.characterName}", a real ${mission.characterRole} living in a city where ${language} is spoken.
         
         CRITICAL: You are NOT a language teacher or tutor. You are a LOCAL PERSON with personality.
+        
+        USER'S LANGUAGE LEVEL: ${cefrLevel} (CEFR scale)
+        LANGUAGE ADJUSTMENT: ${levelGuidance[cefrLevel as keyof typeof levelGuidance] || levelGuidance['A1']}
         
         YOUR PERSONALITY:
         - You're a bit impatient with tourists who don't greet properly
@@ -334,6 +552,7 @@ export async function registerRoutes(
         3. NEVER explain grammar or say "you should say X instead"
         4. React naturally: confused? Ask them to repeat. Rude? Show displeasure.
         5. Keep responses SHORT (1-2 sentences) like real conversations
+        6. IMPORTANT: Adjust your language complexity to match the user's ${cefrLevel} level
         
         PENALTY SYSTEM:
         - If the user says something RUDE or INAPPROPRIATE (no greeting, demanding, offensive):
@@ -343,7 +562,7 @@ export async function registerRoutes(
         
         Current situation: "${mission.scenario}"
         
-        Remember: You're a real person, not a robot or teacher. Act naturally!
+        Remember: You're a real person, not a robot or teacher. Act naturally at ${cefrLevel} level!
       `;
 
       const contents = [
@@ -378,7 +597,8 @@ export async function registerRoutes(
   // === World Tour Evaluate Mission ===
   app.post('/api/world-tour/evaluate', protect, async (req: any, res) => {
     try {
-      const { destination, mission, messages, heartsRemaining } = req.body;
+      const userId = req.user?.id;
+      const { destination, mission, messages, heartsRemaining, languageCode } = req.body;
       
       const prompt = `
         Evaluate this language learning roleplay conversation.
@@ -396,8 +616,16 @@ export async function registerRoutes(
         {
           "success": true/false (did they complete the main mission objective?),
           "objectivesCompleted": [true/false for each objective],
-          "feedback": "Brief encouraging feedback about their performance"
+          "feedback": "Brief encouraging feedback about their performance",
+          "performanceScore": 0-100 (overall language performance quality)
         }
+        
+        Performance scoring guide:
+        - 90-100: Excellent communication, polite, achieved all objectives fluently
+        - 70-89: Good attempt, minor mistakes but understood
+        - 50-69: Basic communication achieved with some difficulty
+        - 30-49: Struggled but tried, partial success
+        - 0-29: Failed to communicate effectively
         
         Be generous in evaluation - if they made a genuine attempt at the mission objectives, count it as success.
       `;
@@ -413,12 +641,30 @@ export async function registerRoutes(
 
       const result = JSON.parse(resultText);
       
+      // Update XP
       if (result.success) {
-        const userId = req.user.claims.sub;
         await storage.updateUserXp(userId, 100);
       }
+      
+      // Update CEFR proficiency based on performance
+      let proficiencyUpdate = null;
+      if (userId && languageCode) {
+        const performance = result.performanceScore || (result.success ? 75 : 40);
+        const updateResult = await storage.updateProficiencyFromActivity(
+          userId,
+          languageCode,
+          'world_tour_roleplay',
+          performance,
+          `World Tour mission in ${destination?.city || 'city'}: ${mission.scenario.substring(0, 50)}...`
+        );
+        proficiencyUpdate = {
+          newLevel: updateResult.proficiency.cefrLevel,
+          newScore: updateResult.proficiency.score,
+          scoreChange: updateResult.log.scoreChange
+        };
+      }
 
-      res.json(result);
+      res.json({ ...result, proficiencyUpdate });
     } catch (err) {
       console.error("World tour evaluation error:", err);
       res.status(500).json({ 
@@ -498,6 +744,307 @@ export async function registerRoutes(
     } catch (err) {
       console.error("World tour STT error:", err);
       res.status(500).json({ error: "Failed to transcribe audio" });
+    }
+  });
+
+  // === Level Test Endpoints ===
+  
+  // Get user's language proficiency
+  app.get('/api/proficiency', protect, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const proficiencies = await storage.getLanguageProficiency(userId);
+      res.json(proficiencies);
+    } catch (err) {
+      console.error("Get proficiency error:", err);
+      res.status(500).json({ error: "Failed to get proficiency" });
+    }
+  });
+
+  // Get proficiency for specific language
+  app.get('/api/proficiency/:languageCode', protect, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const { languageCode } = req.params;
+      const proficiency = await storage.getLanguageProficiencyByCode(userId, languageCode);
+      res.json(proficiency || { cefrLevel: 'A1', cefrScore: 0 });
+    } catch (err) {
+      console.error("Get language proficiency error:", err);
+      res.status(500).json({ error: "Failed to get language proficiency" });
+    }
+  });
+
+  // Generate level test questions
+  app.post('/api/level-test/generate', protect, async (req: any, res) => {
+    try {
+      const { languageCode, languageName, currentLevel } = req.body;
+      
+      const prompt = `
+        You are a language proficiency test generator using CEFR standards.
+        Create a comprehensive level test for ${languageName} (${languageCode}) language learners.
+        ${currentLevel ? `Current estimated level: ${currentLevel}` : 'This is an initial placement test.'}
+        
+        Generate 15 questions that cover:
+        - Vocabulary (5 questions)
+        - Grammar (5 questions)
+        - Reading comprehension (3 questions)
+        - Situational/Practical usage (2 questions)
+        
+        Questions should range from A1 to C2 difficulty to accurately place the learner.
+        
+        Output ONLY valid JSON matching this schema:
+        {
+          "questions": [
+            {
+              "id": 1,
+              "type": "vocabulary" | "grammar" | "reading" | "situational",
+              "difficulty": "A1" | "A2" | "B1" | "B2" | "C1" | "C2",
+              "question": "Question text in ${languageName}",
+              "questionKo": "Question translated to Korean for the learner",
+              "options": ["Option A", "Option B", "Option C", "Option D"],
+              "correctAnswer": 0,
+              "explanation": "Why this answer is correct (in Korean)",
+              "skillTested": "Brief description of what skill this tests"
+            }
+          ]
+        }
+      `;
+
+      const result = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: prompt
+      });
+
+      const responseText = result.text || "";
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("Failed to parse test questions");
+      }
+
+      const testData = JSON.parse(jsonMatch[0]);
+      res.json(testData);
+    } catch (err) {
+      console.error("Generate level test error:", err);
+      res.status(500).json({ error: "Failed to generate level test" });
+    }
+  });
+
+  // Submit level test and get result
+  app.post('/api/level-test/submit', protect, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const { languageCode, languageName, answers, questions, testType = 'initial' } = req.body;
+      
+      // Calculate score
+      let correctCount = 0;
+      const difficultyScores: Record<string, { correct: number; total: number }> = {};
+      
+      questions.forEach((q: any, idx: number) => {
+        const userAnswer = answers[idx];
+        const isCorrect = userAnswer === q.correctAnswer;
+        
+        if (!difficultyScores[q.difficulty]) {
+          difficultyScores[q.difficulty] = { correct: 0, total: 0 };
+        }
+        difficultyScores[q.difficulty].total++;
+        
+        if (isCorrect) {
+          correctCount++;
+          difficultyScores[q.difficulty].correct++;
+        }
+      });
+
+      // Determine CEFR level based on performance at each difficulty
+      const cefrLevels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+      let determinedLevel = 'A1';
+      let cefrScore = 0;
+
+      for (const level of cefrLevels) {
+        const levelData = difficultyScores[level];
+        if (levelData && levelData.correct / levelData.total >= 0.6) {
+          determinedLevel = level;
+          cefrScore = Math.round((correctCount / questions.length) * 100);
+        } else {
+          break;
+        }
+      }
+
+      // Get previous proficiency
+      const previousProficiency = await storage.getLanguageProficiencyByCode(userId, languageCode);
+      const previousLevel = previousProficiency?.cefrLevel || null;
+      const previousScore = previousProficiency?.cefrScore || 0;
+
+      // Update or create proficiency
+      await storage.upsertLanguageProficiency(userId, {
+        languageCode,
+        cefrLevel: determinedLevel,
+        cefrScore,
+        lastTestDate: new Date()
+      });
+
+      // Identify strengths and weaknesses
+      const typeScores: Record<string, { correct: number; total: number }> = {};
+      questions.forEach((q: any, idx: number) => {
+        if (!typeScores[q.type]) {
+          typeScores[q.type] = { correct: 0, total: 0 };
+        }
+        typeScores[q.type].total++;
+        if (answers[idx] === q.correctAnswer) {
+          typeScores[q.type].correct++;
+        }
+      });
+
+      const strengths: string[] = [];
+      const weaknesses: string[] = [];
+      
+      Object.entries(typeScores).forEach(([type, data]) => {
+        const percentage = data.correct / data.total;
+        if (percentage >= 0.7) {
+          strengths.push(type);
+        } else if (percentage < 0.5) {
+          weaknesses.push(type);
+        }
+      });
+
+      // Save test history
+      await storage.createLevelTestHistory(userId, {
+        languageCode,
+        testType,
+        previousLevel,
+        newLevel: determinedLevel,
+        score: correctCount,
+        maxScore: questions.length,
+        strengths,
+        weaknesses
+      });
+
+      // Log proficiency change if level changed
+      if (previousLevel !== determinedLevel || previousScore !== cefrScore) {
+        await storage.createProficiencyLog(userId, {
+          languageCode,
+          activityType: 'level_test',
+          scoreChange: cefrScore - previousScore,
+          previousScore,
+          newScore: cefrScore,
+          previousLevel: previousLevel || 'A1',
+          newLevel: determinedLevel,
+          reason: testType === 'initial' ? 'Initial placement test' : 'Periodic assessment'
+        });
+      }
+
+      res.json({
+        cefrLevel: determinedLevel,
+        cefrScore,
+        correctCount,
+        totalQuestions: questions.length,
+        strengths,
+        weaknesses,
+        previousLevel,
+        levelChanged: previousLevel !== determinedLevel
+      });
+    } catch (err) {
+      console.error("Submit level test error:", err);
+      res.status(500).json({ error: "Failed to submit level test" });
+    }
+  });
+
+  // Update proficiency based on activity performance
+  app.post('/api/proficiency/update', protect, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const { languageCode, activityType, activityId, performance, reason } = req.body;
+      
+      // Get current proficiency
+      let proficiency = await storage.getLanguageProficiencyByCode(userId, languageCode);
+      
+      if (!proficiency) {
+        // Create initial proficiency if doesn't exist
+        await storage.upsertLanguageProficiency(userId, {
+          languageCode,
+          cefrLevel: 'A1',
+          cefrScore: 0
+        });
+        proficiency = await storage.getLanguageProficiencyByCode(userId, languageCode);
+      }
+
+      if (!proficiency) {
+        return res.status(500).json({ error: "Failed to get/create proficiency" });
+      }
+
+      // Calculate score change based on performance
+      // Performance: 0-100 scale, with 50 being neutral
+      // Good performance (>70) increases score, poor (<30) decreases
+      let scoreChange = 0;
+      if (performance >= 80) scoreChange = 5;
+      else if (performance >= 70) scoreChange = 3;
+      else if (performance >= 60) scoreChange = 1;
+      else if (performance < 30) scoreChange = -3;
+      else if (performance < 40) scoreChange = -1;
+
+      const previousScore = proficiency.cefrScore;
+      const previousLevel = proficiency.cefrLevel;
+      let newScore = Math.max(0, Math.min(100, previousScore + scoreChange));
+      let newLevel = previousLevel;
+
+      // Check for level changes
+      const cefrLevels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+      const currentLevelIdx = cefrLevels.indexOf(previousLevel);
+
+      if (newScore >= 100 && currentLevelIdx < cefrLevels.length - 1) {
+        newLevel = cefrLevels[currentLevelIdx + 1];
+        newScore = 0;
+      } else if (newScore < 0 && currentLevelIdx > 0) {
+        newLevel = cefrLevels[currentLevelIdx - 1];
+        newScore = 80;
+      }
+
+      // Update proficiency
+      await storage.upsertLanguageProficiency(userId, {
+        languageCode,
+        cefrLevel: newLevel,
+        cefrScore: newScore,
+        updatedAt: new Date()
+      });
+
+      // Log the change
+      if (scoreChange !== 0) {
+        await storage.createProficiencyLog(userId, {
+          languageCode,
+          activityType,
+          activityId,
+          scoreChange,
+          previousScore,
+          newScore,
+          previousLevel,
+          newLevel,
+          reason
+        });
+      }
+
+      res.json({
+        previousLevel,
+        newLevel,
+        previousScore,
+        newScore,
+        scoreChange,
+        levelChanged: previousLevel !== newLevel
+      });
+    } catch (err) {
+      console.error("Update proficiency error:", err);
+      res.status(500).json({ error: "Failed to update proficiency" });
+    }
+  });
+
+  // Get proficiency history
+  app.get('/api/proficiency/:languageCode/history', protect, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const { languageCode } = req.params;
+      const history = await storage.getProficiencyLog(userId, languageCode);
+      res.json(history);
+    } catch (err) {
+      console.error("Get proficiency history error:", err);
+      res.status(500).json({ error: "Failed to get proficiency history" });
     }
   });
 

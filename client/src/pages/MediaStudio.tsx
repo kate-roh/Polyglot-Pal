@@ -1,17 +1,17 @@
 import { useState, useRef } from 'react';
-import { motion } from 'framer-motion';
 import { Upload, Play, FileText, Brain, Loader2, History, Trash2, Film, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
-import { useAnalyzeMedia } from '@/hooks/use-media';
+import { useAnalyzeMedia, useAnalyzeVideo } from '@/hooks/use-media';
 import { useHistory, useDeleteHistory } from '@/hooks/use-history';
 import { AnalysisDisplay } from '@/components/AnalysisDisplay';
-import { type AnalysisResult } from '@shared/schema';
+import { VideoAnalysisDisplay } from '@/components/VideoAnalysisDisplay';
+import { type AnalysisResult, type VideoAnalysisResult } from '@shared/schema';
 import { Navigation } from '@/components/Navigation';
 
-type TabType = 'youtube' | 'file' | 'manual';
+type TabType = 'video' | 'file' | 'manual';
 
 interface FileItem {
   id: string;
@@ -19,18 +19,22 @@ interface FileItem {
 }
 
 export default function MediaStudio() {
-  const [activeTab, setActiveTab] = useState<TabType>('youtube');
+  const [activeTab, setActiveTab] = useState<TabType>('video');
   const [input, setInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
   const [selectedResult, setSelectedResult] = useState<AnalysisResult | null>(null);
+  const [videoResult, setVideoResult] = useState<VideoAnalysisResult | null>(null);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const { mutate: analyze, isPending: loading } = useAnalyzeMedia();
+  const { mutate: analyze, isPending: loadingMedia } = useAnalyzeMedia();
+  const { mutate: analyzeVideo, isPending: loadingVideo } = useAnalyzeVideo();
   const { data: history = [] } = useHistory();
   const { mutate: deleteHistory } = useDeleteHistory();
+  
+  const loading = loadingMedia || loadingVideo;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -66,23 +70,37 @@ export default function MediaStudio() {
   };
 
   const handleAnalyze = async () => {
-    if (activeTab === 'youtube' && !input.trim()) return;
+    if (activeTab === 'video' && !input.trim()) return;
     if (activeTab === 'file' && selectedFiles.length === 0) return;
     if (activeTab === 'manual' && !input.trim()) return;
 
     setProgress(10);
-    setStatusMessage("Connecting to AI model...");
+    setStatusMessage("AI에 연결 중...");
     
+    if (activeTab === 'video') {
+      setProgress(30);
+      setStatusMessage("영상 분석 중...");
+      analyzeVideo({ url: input.trim(), languageCode: 'en' }, {
+        onSuccess: (result) => {
+          setProgress(100);
+          setVideoResult(result);
+          setInput('');
+        },
+        onError: (error) => {
+          setProgress(0);
+          alert(error instanceof Error ? error.message : "분석 실패");
+        }
+      });
+      return;
+    }
+
     let content = input;
     let mimeType: string | undefined;
     let title = 'Analysis';
 
-    if (activeTab === 'youtube') {
-      content = input.trim();
-      title = 'YouTube Session';
-    } else if (activeTab === 'file') {
+    if (activeTab === 'file') {
       setProgress(20);
-      setStatusMessage("Reading file content...");
+      setStatusMessage("파일 읽는 중...");
       const file = selectedFiles[0]?.file;
       if (file) {
         mimeType = file.type;
@@ -90,9 +108,9 @@ export default function MediaStudio() {
         try {
           content = await readFileAsBase64(file);
           setProgress(40);
-          setStatusMessage("Sending to AI...");
+          setStatusMessage("AI로 전송 중...");
         } catch (err) {
-          alert("Failed to read file");
+          alert("파일 읽기 실패");
           return;
         }
       }
@@ -113,11 +131,33 @@ export default function MediaStudio() {
         setInput('');
       },
       onError: (error) => {
-        alert(error instanceof Error ? error.message : "Analysis failed");
+        setProgress(0);
+        alert(error instanceof Error ? error.message : "분석 실패");
       }
     });
   };
 
+  // Show video analysis result
+  if (videoResult) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="p-4 md:p-8 max-w-5xl mx-auto">
+          <Button 
+            variant="ghost" 
+            onClick={() => setVideoResult(null)}
+            className="mb-4"
+            data-testid="button-back"
+          >
+            ← 스튜디오로 돌아가기
+          </Button>
+          <VideoAnalysisDisplay data={videoResult} />
+        </main>
+      </div>
+    );
+  }
+
+  // Show text/file analysis result
   if (selectedResult) {
     return (
       <div className="min-h-screen bg-background">
@@ -129,9 +169,9 @@ export default function MediaStudio() {
             className="mb-4"
             data-testid="button-back"
           >
-            Back to Studio
+            ← 스튜디오로 돌아가기
           </Button>
-          <AnalysisDisplay data={selectedResult} sourceType={activeTab} />
+          <AnalysisDisplay data={selectedResult} sourceType={activeTab === 'file' ? 'file' : 'manual'} />
         </main>
       </div>
     );
@@ -160,39 +200,43 @@ export default function MediaStudio() {
 
         <header className="text-center">
           <h2 className="text-3xl font-black uppercase text-foreground tracking-tighter mb-2">Media Studio</h2>
-          <p className="text-muted-foreground text-sm">Transform any media into learning material with AI</p>
+          <p className="text-muted-foreground text-sm">영상이나 텍스트를 AI로 학습 자료로 변환하세요</p>
         </header>
 
         <Card className="glass-card rounded-3xl p-5 md:p-10 border border-border/50">
           <div className="flex p-1 bg-muted/50 rounded-2xl mb-8 border border-border/50">
-            {(['youtube', 'file', 'manual'] as TabType[]).map(t => (
+            {(['video', 'file', 'manual'] as TabType[]).map(t => (
               <button 
                 key={t} 
                 onClick={() => setActiveTab(t)} 
                 className={`flex-1 py-4 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${activeTab === t ? 'bg-primary text-primary-foreground shadow-lg' : 'text-muted-foreground hover:text-foreground'}`}
                 data-testid={`tab-${t}`}
               >
-                {t === 'youtube' && <Play className="w-4 h-4 inline mr-2" />}
+                {t === 'video' && <Play className="w-4 h-4 inline mr-2" />}
                 {t === 'file' && <Upload className="w-4 h-4 inline mr-2" />}
                 {t === 'manual' && <FileText className="w-4 h-4 inline mr-2" />}
-                {t}
+                {t === 'video' ? '영상' : t === 'file' ? '파일' : '텍스트'}
               </button>
             ))}
           </div>
 
           <div className="space-y-6">
-            {activeTab === 'youtube' && (
+            {activeTab === 'video' && (
               <div className="space-y-2">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-2">YouTube URL</label>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-2">영상 URL</label>
                 <Input 
                   type="text" 
                   value={input} 
                   onChange={e => setInput(e.target.value)} 
-                  placeholder="https://www.youtube.com/watch?v=..." 
+                  placeholder="YouTube, TikTok, Instagram 영상 링크를 붙여넣으세요" 
                   className="bg-muted/50 border-border rounded-2xl p-5 text-foreground"
-                  data-testid="input-youtube-url"
+                  data-testid="input-video-url"
                 />
-                <p className="text-xs text-muted-foreground px-2">* AI will search and analyze the video information</p>
+                <div className="flex gap-2 px-2">
+                  <span className="text-xs bg-red-500/10 text-red-500 px-2 py-1 rounded-full">YouTube</span>
+                  <span className="text-xs bg-black/10 text-foreground px-2 py-1 rounded-full">TikTok</span>
+                  <span className="text-xs bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-500 px-2 py-1 rounded-full">Instagram</span>
+                </div>
               </div>
             )}
             
@@ -251,7 +295,7 @@ export default function MediaStudio() {
               data-testid="button-analyze"
             >
               {loading ? <Loader2 className="w-5 h-5 mr-3 animate-spin" /> : <Brain className="w-5 h-5 mr-3" />}
-              {loading ? "Analyzing..." : "Start Analysis"}
+              {loading ? "분석 중..." : "분석 시작"}
             </Button>
           </div>
         </Card>

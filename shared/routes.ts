@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { insertUserStatsSchema, insertAnalysisHistorySchema, insertBookmarkSchema, mediaAnalyzeRequestSchema, userStats, analysisHistory, bookmarks, analysisResultSchema } from './schema';
 
+// Re-export types for use in frontend
+export type { MediaAnalyzeRequest, AnalysisResult } from './schema';
+
 export const errorSchemas = {
   validation: z.object({
     message: z.string(),

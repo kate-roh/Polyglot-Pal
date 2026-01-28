@@ -60,6 +60,27 @@ export interface LevelTestResult {
   recommendedLevel: number;
 }
 
+export type TourPhase = 'immigration' | 'tourism' | 'departure';
+export type TourLocation = 'airport' | 'cafe' | 'hotel' | 'street' | 'restaurant' | 'shop' | 'station';
+
+export interface NpcProfile {
+  name: string;
+  role: string;
+  avatar: string; // Emoji or image URL
+  personality: string; // e.g., "친절하고 느긋한", "까칠하지만 도움이 됨"
+  mood: 'happy' | 'neutral' | 'busy' | 'grumpy';
+  friendliness: number; // 1-5 scale
+}
+
+export interface PhaseInfo {
+  phase: TourPhase;
+  location: TourLocation;
+  npc: NpcProfile;
+  scenario: string;
+  greeting: string;
+  objectives: string[];
+}
+
 export interface Destination {
   id: string;
   country: string;
@@ -69,6 +90,12 @@ export interface Destination {
   language: Language;
   flag: string;
   image: string;
+  weather?: {
+    temp: number;
+    condition: string;
+    description: string;
+  };
+  phases: PhaseInfo[];
   mission: {
     scenario: string;
     characterName: string;

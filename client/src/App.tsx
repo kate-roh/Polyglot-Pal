@@ -14,6 +14,7 @@ import MediaStudio from "@/pages/MediaStudio";
 import GrammarLab from "@/pages/GrammarLab";
 import LiveTutor from "@/pages/LiveTutor";
 import VocabularyPage from "@/pages/VocabularyPage";
+import LevelTest from "@/pages/LevelTest";
 import { Loader2 } from "lucide-react";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -82,6 +83,9 @@ function Router() {
       </Route>
       <Route path="/bookmarks">
         <ProtectedRoute component={BookmarksPage} />
+      </Route>
+      <Route path="/level-test">
+        <ProtectedRoute component={LevelTest} />
       </Route>
 
       {/* Fallback */}

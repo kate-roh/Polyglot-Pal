@@ -5,7 +5,9 @@
 Polyglot Hub is an AI-powered language learning platform that combines immersive roleplay experiences with media analysis tools. The application allows users to practice languages through virtual "world tours" to different destinations, analyze YouTube videos and audio/video files for language learning content, and track their progress with XP and leveling systems.
 
 Key features include:
-- Media Studio for analyzing YouTube videos, uploaded files, and manual text input
+- Media Studio for analyzing videos (YouTube, TikTok, Instagram), uploaded files, and manual text input
+- Enhanced video analysis with timestamp-based segments, TTS/STT, sentence cards with translations
+- Learning sections: 학습개요, 롤플레이 미션, 복습퀴즈, 전체 대화 연습
 - World Tour mode for destination-based language practice with voice input/output (STT/TTS)
 - Vocabulary, phrases, and grammar extraction from media content
 - Bookmark/vault system for saving words, phrases, sentences, and grammar points
@@ -13,12 +15,45 @@ Key features include:
 - Passport stamp system for completed World Tour cities
 - Replit Auth integration for user authentication
 
+### Video Analysis Features
+The Media Studio now supports enhanced video analysis for:
+- **YouTube** - Embedded player with timestamp seeking
+- **TikTok** - External link with full analysis
+- **Instagram** - External link with full analysis
+
+Each video analysis includes:
+- Timestamp-based sentence segments with Korean translations
+- Expression notes explaining idioms/phrases
+- Extracted vocabulary and phrases per segment
+- Roleplay mission related to video topic
+- Quiz questions for comprehension testing
+- Conversation practice dialogue
+
 ### Bookmark Types
 The bookmark system supports four types of saved items:
 - **word**: Single vocabulary words
 - **phrase**: Multi-word expressions, idioms, collocations (e.g., "get it right", "in quick succession")
 - **sentence**: Full sentences with translations
 - **grammar**: Grammar patterns and rules
+
+### CEFR Proficiency System
+The app uses CEFR (Common European Framework of Reference) levels to track language proficiency:
+- **Levels**: A1 (Beginner) → A2 → B1 → B2 → C1 → C2 (Mastery)
+- **Score**: 0-100 within each level; 85+ promotes to next level, 15- demotes
+- **Real-time Updates**: All activities (World Tour, Media Studio, Quizzes) update proficiency
+- **Adaptive Content**: NPC difficulty and video analysis complexity adjust to user's CEFR level
+
+Database tables:
+- `languageProficiency`: Stores per-language CEFR level and skill scores
+- `levelTestHistory`: Records level test attempts and results  
+- `proficiencyLog`: Tracks score changes from activities
+
+API endpoints:
+- `GET /api/proficiency` - Get all user proficiencies
+- `GET /api/proficiency/:languageCode` - Get specific language proficiency
+- `POST /api/proficiency/update` - Update proficiency from activity
+- `POST /api/level-test/generate` - Generate AI-powered level test
+- `POST /api/level-test/submit` - Submit test and update proficiency
 
 ## User Preferences
 

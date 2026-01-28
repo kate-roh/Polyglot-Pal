@@ -9,7 +9,7 @@ import { ArrowRight, Globe, Heart, Send, X, Trophy, RotateCcw, Loader2, Target, 
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiRequest } from '@/lib/queryClient';
 import { useAddXp } from '@/hooks/use-stats';
-import { type Destination } from '@/lib/types';
+import { type Destination, type PhaseInfo, type TourPhase } from '@/lib/types';
 
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -58,6 +58,21 @@ interface HintSuggestion {
 export default function WorldTour() {
   const [activeDestination, setActiveDestination] = useState<Destination | null>(null);
   const [isInMission, setIsInMission] = useState(false);
+  const [currentPhase, setCurrentPhase] = useState<PhaseInfo | null>(null);
+  const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
+  const [showPhaseSelect, setShowPhaseSelect] = useState(false);
+  const [completedPhases, setCompletedPhases] = useState<TourPhase[]>([]);
+  const [evaluationResult, setEvaluationResult] = useState<{
+    score: number;
+    feedback: string;
+    strengths: string[];
+    improvements: string[];
+  } | null>(null);
+  const [proficiencyUpdate, setProficiencyUpdate] = useState<{
+    newLevel: string;
+    newScore: number;
+    scoreChange: number;
+  } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -221,6 +236,37 @@ export default function WorldTour() {
 
   const handleDestinationClick = (dest: Destination) => {
     setActiveDestination(dest);
+    if (dest.phases && dest.phases.length > 0) {
+      setShowPhaseSelect(true);
+      setCompletedPhases([]);
+      setCurrentPhaseIndex(0);
+    }
+  };
+
+  const startPhase = (phase: PhaseInfo, index: number) => {
+    if (!activeDestination) return;
+    
+    setCurrentPhase(phase);
+    setCurrentPhaseIndex(index);
+    setIsInMission(true);
+    setShowPhaseSelect(false);
+    setShowHintPanel(false);
+    setHints([]);
+    setEvaluationResult(null);
+    setGameState({
+      hearts: 5,
+      hintsRemaining: 3,
+      objectivesCompleted: new Array(phase.objectives.length).fill(false),
+      isGameOver: false,
+      isSuccess: null
+    });
+    
+    setMessages([{
+      id: '1',
+      role: 'npc',
+      content: phase.greeting,
+      timestamp: new Date()
+    }]);
   };
 
   const startMission = () => {
@@ -293,11 +339,12 @@ export default function WorldTour() {
     
     try {
       const response = await apiRequest('POST', '/api/world-tour/evaluate', {
-        destination: activeDestination.id,
+        destination: activeDestination,
         mission: activeDestination.mission,
         messages: messages.map(m => ({ role: m.role, content: m.content })),
         heartsRemaining: gameState.hearts,
-        hintsUsed: 3 - gameState.hintsRemaining
+        hintsUsed: 3 - gameState.hintsRemaining,
+        languageCode: activeDestination.language.code
       });
       
       const result = await response.json();
@@ -310,6 +357,11 @@ export default function WorldTour() {
         isSuccess,
         objectivesCompleted: result.objectivesCompleted || prev.objectivesCompleted
       }));
+      
+      // Store proficiency update for display
+      if (result.proficiencyUpdate) {
+        setProficiencyUpdate(result.proficiencyUpdate);
+      }
       
       if (isSuccess) {
         addXp(100);
@@ -354,6 +406,7 @@ export default function WorldTour() {
         destination: activeDestination.id,
         mission: activeDestination.mission,
         language: activeDestination.language.name,
+        languageCode: activeDestination.language.code,
         messages: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
         currentHearts: gameState.hearts
       });
@@ -415,6 +468,9 @@ export default function WorldTour() {
     setShowResultModal(false);
     setShowHintPanel(false);
     setHints([]);
+    setCurrentPhase(null);
+    setEvaluationResult(null);
+    setProficiencyUpdate(null);
     setGameState({
       hearts: 5,
       hintsRemaining: 3,
@@ -427,9 +483,51 @@ export default function WorldTour() {
   const exitToMap = () => {
     resetMission();
     setActiveDestination(null);
+    setShowPhaseSelect(false);
+    setCompletedPhases([]);
+  };
+
+  const goToNextPhase = () => {
+    if (!activeDestination) return;
+    
+    if (currentPhase) {
+      setCompletedPhases(prev => [...prev, currentPhase.phase]);
+    }
+    
+    const nextIndex = currentPhaseIndex + 1;
+    if (nextIndex < activeDestination.phases.length) {
+      resetMission();
+      setShowPhaseSelect(true);
+      setCurrentPhaseIndex(nextIndex);
+    } else {
+      exitToMap();
+      if (!completedCities.includes(activeDestination.id)) {
+        setCompletedCities(prev => [...prev, activeDestination.id]);
+      }
+    }
+  };
+
+  const getMoodEmoji = (mood: string) => {
+    switch (mood) {
+      case 'happy': return '😊';
+      case 'neutral': return '😐';
+      case 'busy': return '😤';
+      case 'grumpy': return '😠';
+      default: return '😐';
+    }
+  };
+
+  const getFriendlinessStars = (level: number) => {
+    return '★'.repeat(level) + '☆'.repeat(5 - level);
   };
 
   if (isInMission && activeDestination) {
+    const npc = currentPhase?.npc;
+    const scenario = currentPhase?.scenario || activeDestination.mission.scenario;
+    const characterName = npc?.name || activeDestination.mission.characterName;
+    const characterRole = npc?.role || activeDestination.mission.characterRole;
+    const avatar = npc?.avatar || activeDestination.flag;
+    
     return (
       <div className="flex flex-col h-screen bg-background">
         <header className="border-b border-border bg-card/95 backdrop-blur-xl sticky top-0 z-20">
@@ -439,15 +537,29 @@ export default function WorldTour() {
                 <X className="w-5 h-5" />
               </Button>
               <div className="flex items-center gap-2">
-                <span className="text-xl">{activeDestination.flag}</span>
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-purple-500/30 flex items-center justify-center border border-primary/20">
+                  <span className="text-xl">{avatar}</span>
+                </div>
                 <div>
-                  <h3 className="font-bold text-foreground text-sm leading-tight">{activeDestination.mission.characterName}</h3>
-                  <p className="text-xs text-muted-foreground">{activeDestination.mission.characterRole}</p>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-foreground text-sm leading-tight">{characterName}</h3>
+                    {npc && <span className="text-sm">{getMoodEmoji(npc.mood)}</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{characterRole}</p>
+                  {npc && (
+                    <p className="text-xs text-amber-500">{getFriendlinessStars(npc.friendliness)}</p>
+                  )}
                 </div>
               </div>
             </div>
             
             <div className="flex items-center gap-3">
+              {activeDestination.weather && (
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <span>{activeDestination.weather.condition}</span>
+                  <span>{activeDestination.weather.temp}°C</span>
+                </div>
+              )}
               <div className="flex items-center gap-0.5">
                 {[...Array(5)].map((_, i) => (
                   <motion.div
@@ -469,8 +581,13 @@ export default function WorldTour() {
             <div className="p-2.5 bg-amber-500/10 rounded-lg border border-amber-500/20">
               <div className="flex items-center gap-2">
                 <Target className="w-4 h-4 text-amber-500 shrink-0" />
-                <p className="text-xs text-amber-200 font-medium">{activeDestination.mission.scenario}</p>
+                <p className="text-xs text-amber-200 font-medium">{scenario}</p>
               </div>
+              {npc && (
+                <p className="text-xs text-muted-foreground mt-1 ml-6">
+                  {npc.personality}
+                </p>
+              )}
             </div>
           </div>
         </header>
@@ -487,7 +604,7 @@ export default function WorldTour() {
                 <div className={`flex items-end gap-2 max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                   {msg.role === 'npc' && (
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 to-purple-500/30 flex items-center justify-center shrink-0 border border-primary/20">
-                      <span className="text-sm">{activeDestination.flag}</span>
+                      <span className="text-sm">{avatar}</span>
                     </div>
                   )}
                   <div className={`p-3.5 rounded-2xl ${
@@ -523,7 +640,7 @@ export default function WorldTour() {
             >
               <div className="flex items-end gap-2">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 to-purple-500/30 flex items-center justify-center border border-primary/20">
-                  <span className="text-sm">{activeDestination.flag}</span>
+                  <span className="text-sm">{avatar}</span>
                 </div>
                 <div className="bg-muted p-3.5 rounded-2xl rounded-bl-sm">
                   <div className="flex items-center gap-1.5">
@@ -677,7 +794,7 @@ export default function WorldTour() {
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: 0.5 }}
-                        className="bg-gradient-to-br from-primary/10 to-purple-500/10 border border-primary/20 rounded-2xl p-6 mb-6"
+                        className="bg-gradient-to-br from-primary/10 to-purple-500/10 border border-primary/20 rounded-2xl p-6 mb-4"
                       >
                         <div className="flex items-center justify-center gap-4">
                           <div className="text-center">
@@ -694,6 +811,36 @@ export default function WorldTour() {
                           </div>
                         </div>
                       </motion.div>
+                      
+                      {proficiencyUpdate && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.7 }}
+                          className="bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20 rounded-xl p-4 mb-6"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Target className="w-5 h-5 text-blue-400" />
+                              <span className="text-sm font-medium text-foreground">CEFR Level</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 bg-blue-500/20 rounded text-sm font-bold text-blue-400">
+                                {proficiencyUpdate.newLevel}
+                              </span>
+                              <span className={`text-sm font-bold ${proficiencyUpdate.scoreChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {proficiencyUpdate.scoreChange >= 0 ? '+' : ''}{proficiencyUpdate.scoreChange}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-2 w-full bg-black/20 rounded-full h-1.5">
+                            <div 
+                              className="bg-gradient-to-r from-blue-400 to-indigo-500 h-1.5 rounded-full transition-all"
+                              style={{ width: `${proficiencyUpdate.newScore}%` }}
+                            />
+                          </div>
+                        </motion.div>
+                      )}
                     </>
                   ) : (
                     <>
@@ -713,9 +860,28 @@ export default function WorldTour() {
                           ? "The local wasn't impressed with your manners. Be more polite next time!" 
                           : "You didn't quite complete the mission. Try again!"}
                       </p>
-                      <div className="bg-muted/50 rounded-xl p-4 mb-6">
+                      <div className="bg-muted/50 rounded-xl p-4 mb-4">
                         <p className="text-sm font-bold text-amber-500">+10 XP (effort bonus)</p>
                       </div>
+                      
+                      {proficiencyUpdate && (
+                        <div className="bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20 rounded-xl p-4 mb-6">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Target className="w-5 h-5 text-blue-400" />
+                              <span className="text-sm font-medium text-foreground">CEFR Level</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 bg-blue-500/20 rounded text-sm font-bold text-blue-400">
+                                {proficiencyUpdate.newLevel}
+                              </span>
+                              <span className={`text-sm font-bold ${proficiencyUpdate.scoreChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {proficiencyUpdate.scoreChange >= 0 ? '+' : ''}{proficiencyUpdate.scoreChange}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                   
