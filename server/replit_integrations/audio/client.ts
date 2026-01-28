@@ -242,11 +242,22 @@ export async function speechToText(
   format: "wav" | "mp3" | "webm" = "wav"
 ): Promise<string> {
   const file = await toFile(audioBuffer, `audio.${format}`);
-  const response = await openai.audio.transcriptions.create({
-    file,
-    model: "gpt-4o-mini-transcribe",
-  });
-  return response.text;
+  
+  // Try whisper-1 first (more reliable for file uploads), fallback to gpt-4o-mini-transcribe
+  try {
+    const response = await openai.audio.transcriptions.create({
+      file,
+      model: "whisper-1",
+    });
+    return response.text;
+  } catch (err: any) {
+    console.log("whisper-1 failed, trying gpt-4o-mini-transcribe:", err?.message);
+    const response = await openai.audio.transcriptions.create({
+      file,
+      model: "gpt-4o-mini-transcribe",
+    });
+    return response.text;
+  }
 }
 
 /**
