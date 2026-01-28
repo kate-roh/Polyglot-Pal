@@ -1,83 +1,111 @@
-import { Navigation } from "@/components/Navigation";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { useHistory, useDeleteHistory } from "@/hooks/use-history";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-import { Trash2, Youtube, FileText, Type, ChevronRight, Loader2 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Trash2, Youtube, FileText, Upload, Calendar } from "lucide-react";
+import { motion } from "framer-motion";
+import { AnalysisResults } from "@/components/analysis/AnalysisResults";
+import { useState } from "react";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle 
+} from "@/components/ui/dialog";
 
 export default function HistoryPage() {
   const { data: history, isLoading } = useHistory();
-  const { mutate: deleteItem } = useDeleteHistory();
+  const { mutate: deleteHistory } = useDeleteHistory();
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+
+  if (isLoading) return null; // Or skeleton
 
   const getIcon = (type: string) => {
-    switch(type) {
+    switch (type) {
       case 'youtube': return <Youtube className="w-5 h-5 text-red-400" />;
-      case 'file': return <FileText className="w-5 h-5 text-blue-400" />;
-      default: return <Type className="w-5 h-5 text-green-400" />;
+      case 'file': return <Upload className="w-5 h-5 text-blue-400" />;
+      default: return <FileText className="w-5 h-5 text-gray-400" />;
     }
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-background overflow-hidden">
-      <Navigation />
-      
-      <main className="flex-1 overflow-y-auto p-4 md:p-12 relative">
-         <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-accent/5 blur-[120px] pointer-events-none" />
-         
-        <div className="max-w-4xl mx-auto relative z-10">
-          <h1 className="text-3xl font-display font-bold mb-8">Analysis History</h1>
+    <div className="flex min-h-screen bg-background text-foreground">
+      <Sidebar />
+      <main className="flex-1 md:ml-64 p-4 md:p-8 lg:p-12 overflow-y-auto custom-scrollbar">
+        <div className="max-w-5xl mx-auto space-y-8">
+          <header>
+            <h1 className="text-4xl font-display font-bold mb-2">History</h1>
+            <p className="text-muted-foreground text-lg">Your past learning sessions.</p>
+          </header>
 
-          {isLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-          ) : history?.length === 0 ? (
-            <div className="text-center py-20 opacity-50">
-              <History className="w-16 h-16 mx-auto mb-4" />
-              <p className="text-xl">No history yet. Start analyzing!</p>
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              <AnimatePresence>
-                {history?.map((item, index) => (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="glass-card p-5 rounded-xl group flex items-center gap-4 hover:border-primary/30"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center shrink-0">
-                      {getIcon(item.type)}
+          <div className="grid gap-4">
+            {history?.map((item, idx) => (
+              <motion.div
+                key={item.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.05 }}
+              >
+                <Card className="glass-card p-4 flex flex-col md:flex-row items-start md:items-center gap-4 group">
+                  <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
+                    {getIcon(item.type)}
+                  </div>
+                  
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-lg truncate pr-4">{item.title}</h3>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5" />
+                        {format(new Date(item.createdAt!), 'MMM d, yyyy')}
+                      </span>
+                      <span className="bg-white/5 px-2 py-0.5 rounded text-xs uppercase tracking-wider">{item.type}</span>
                     </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-lg truncate pr-4">{item.title}</h4>
-                      <p className="text-sm text-muted-foreground flex gap-3">
-                        <span className="capitalize">{item.type}</span>
-                        <span>•</span>
-                        <span>{item.createdAt && format(new Date(item.createdAt), 'MMM d, yyyy')}</span>
-                      </p>
-                    </div>
+                  </div>
 
-                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => deleteItem(item.id)}
-                        className="p-2 hover:bg-destructive/20 hover:text-destructive rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                      <button className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-                        <ChevronRight className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
+                  <div className="flex gap-2 w-full md:w-auto mt-4 md:mt-0">
+                    <Button 
+                      onClick={() => setSelectedItem(item)}
+                      className="flex-1 md:flex-none"
+                    >
+                      View Analysis
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+                      onClick={() => deleteHistory(item.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </Card>
+              </motion.div>
+            ))}
+
+            {history?.length === 0 && (
+              <div className="text-center py-20 bg-white/5 rounded-2xl border border-dashed border-white/10">
+                <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                <h3 className="text-xl font-bold text-muted-foreground">No history yet</h3>
+                <p className="text-sm text-muted-foreground/60 mt-2">Start a new analysis to see it here.</p>
+              </div>
+            )}
+          </div>
         </div>
       </main>
+
+      <Dialog open={!!selectedItem} onOpenChange={(open) => !open && setSelectedItem(null)}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto glass-panel border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold font-display">{selectedItem?.title}</DialogTitle>
+          </DialogHeader>
+          {selectedItem && (
+            <div className="mt-4">
+              <AnalysisResults result={selectedItem.result} sourceType={selectedItem.type} />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

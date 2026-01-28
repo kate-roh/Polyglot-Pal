@@ -1,0 +1,8 @@
+{
+  "name": "Polyglot Hub: World Tour & Media Studio",
+  "description": "The ultimate language learning platform combining immersive world travel roleplay with professional video shadowing and AI analysis.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

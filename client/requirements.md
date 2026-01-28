@@ -1,16 +1,15 @@
 ## Packages
 framer-motion | Complex layout animations and page transitions
-clsx | Utility for conditional class names (standard with tailwind-merge)
+clsx | Utility for conditional class names
 tailwind-merge | Utility for merging tailwind classes
+lucide-react | Icons
+radix-ui | Primitives for accessible components
+recharts | For stats visualization
+date-fns | Date formatting
 
 ## Notes
-Tailwind Config - extend fontFamily:
-fontFamily: {
-  display: ["'Outfit'", "sans-serif"],
-  body: ["'Plus Jakarta Sans'", "sans-serif"],
-}
-
-Integration assumptions:
+- Tailwind config already updated with 'Outfit' and 'Plus Jakarta Sans' fonts.
 - Replit Auth is active.
-- Endpoints follow the structure defined in shared/routes.ts
-- Analysis returns rich JSON structure (summary, vocabulary, grammar, etc.)
+- API endpoints follow shared/routes.ts structure.
+- File handling requires client-side FileReader to Base64 before sending to API.
+- Max file size warning at 100MB.

@@ -14,16 +14,19 @@ export default function Dashboard() {
   
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [currentSourceType, setCurrentSourceType] = useState<string>("");
+  const [statusMessage, setStatusMessage] = useState("");
 
   const handleAnalyze = (type: 'youtube' | 'file' | 'manual', content: string, title?: string, mimeType?: string) => {
     setCurrentSourceType(type);
     setResult(null); // Reset previous result
+    setStatusMessage(`Analyzing ${title || type}...`);
 
     analyze(
       { type, content, title, mimeType },
       {
         onSuccess: (data) => {
           setResult(data);
+          setStatusMessage("Analysis Complete!");
           
           // Save to history automatically
           saveHistory({
@@ -35,6 +38,12 @@ export default function Dashboard() {
 
           // Award XP
           addXp(50);
+          
+          // Clear status after a bit
+          setTimeout(() => setStatusMessage(""), 2000);
+        },
+        onError: () => {
+          setStatusMessage("Analysis Failed. Please try again.");
         }
       }
     );
@@ -56,6 +65,9 @@ export default function Dashboard() {
             <p className="text-lg text-muted-foreground max-w-2xl">
               Upload files, paste links, or write text to extract vocabulary, grammar, and cultural insights instantly.
             </p>
+            {statusMessage && (
+              <p className="mt-2 text-primary animate-pulse font-medium">{statusMessage}</p>
+            )}
           </header>
 
           <MediaInput onAnalyze={handleAnalyze} isPending={isPending} />

@@ -17,7 +17,10 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+        <div className="relative">
+          <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full" />
+          <Loader2 className="w-10 h-10 animate-spin text-primary relative z-10" />
+        </div>
       </div>
     );
   }
@@ -35,7 +38,10 @@ function Router() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+        <div className="relative">
+          <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full" />
+          <Loader2 className="w-10 h-10 animate-spin text-primary relative z-10" />
+        </div>
       </div>
     );
   }

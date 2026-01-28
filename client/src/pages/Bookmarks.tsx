@@ -1,98 +1,102 @@
-import { Navigation } from "@/components/Navigation";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { useBookmarks, useDeleteBookmark } from "@/hooks/use-bookmarks";
-import { format } from "date-fns";
-import { Trash2, Bookmark as BookmarkIcon, Search, Loader2 } from "lucide-react";
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Trash2, Bookmark as BookmarkIcon, MessageCircle, Sparkles } from "lucide-react";
+import { motion } from "framer-motion";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 export default function BookmarksPage() {
   const { data: bookmarks, isLoading } = useBookmarks();
   const { mutate: deleteBookmark } = useDeleteBookmark();
-  const [filter, setFilter] = useState('all');
 
-  const filteredBookmarks = bookmarks?.filter(b => filter === 'all' || b.type === filter);
+  if (isLoading) return null;
+
+  const getIcon = (type: string) => {
+    switch (type) {
+      case 'word': return <BookmarkIcon className="w-4 h-4 text-blue-400" />;
+      case 'sentence': return <MessageCircle className="w-4 h-4 text-green-400" />;
+      case 'grammar': return <Sparkles className="w-4 h-4 text-purple-400" />;
+      default: return null;
+    }
+  };
+
+  const BookmarkCard = ({ item }: { item: any }) => (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+    >
+      <Card className="glass-card p-5 h-full flex flex-col">
+        <div className="flex justify-between items-start gap-4 mb-3">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground bg-white/5 px-2 py-1 rounded-lg">
+            {getIcon(item.type)}
+            {item.type}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 -mt-1 -mr-1"
+            onClick={() => deleteBookmark(item.id)}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+
+        <h3 className="text-xl font-bold mb-2 break-words">{item.content}</h3>
+        <p className="text-muted-foreground mb-4">{item.meaning}</p>
+        
+        {item.context && (
+          <div className="mt-auto pt-4 border-t border-white/5">
+            <p className="text-xs text-muted-foreground/70 italic line-clamp-2">
+              "{item.context}"
+            </p>
+          </div>
+        )}
+      </Card>
+    </motion.div>
+  );
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-background overflow-hidden">
-      <Navigation />
-      
-      <main className="flex-1 overflow-y-auto p-4 md:p-12 relative">
-         <div className="absolute bottom-0 left-0 w-1/2 h-1/2 bg-blue-500/5 blur-[120px] pointer-events-none" />
+    <div className="flex min-h-screen bg-background text-foreground">
+      <Sidebar />
+      <main className="flex-1 md:ml-64 p-4 md:p-8 lg:p-12 overflow-y-auto custom-scrollbar">
+        <div className="max-w-5xl mx-auto space-y-8">
+          <header>
+            <h1 className="text-4xl font-display font-bold mb-2">Bookmarks</h1>
+            <p className="text-muted-foreground text-lg">Your saved vocabulary and grammar collection.</p>
+          </header>
 
-        <div className="max-w-6xl mx-auto relative z-10">
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-            <h1 className="text-3xl font-display font-bold">Your Collection</h1>
-            
-            <div className="flex gap-2 p-1 bg-white/5 rounded-lg w-fit">
-              {['all', 'word', 'sentence', 'grammar'].map(type => (
-                <button
-                  key={type}
-                  onClick={() => setFilter(type)}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                    filter === type 
-                      ? 'bg-primary text-white shadow-lg' 
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}s
-                </button>
-              ))}
-            </div>
-          </div>
+          <Tabs defaultValue="all" className="w-full">
+            <TabsList className="bg-white/5 border border-white/10 p-1 h-auto mb-6">
+              <TabsTrigger value="all" className="rounded-lg data-[state=active]:bg-primary">All</TabsTrigger>
+              <TabsTrigger value="word" className="rounded-lg data-[state=active]:bg-primary">Vocabulary</TabsTrigger>
+              <TabsTrigger value="sentence" className="rounded-lg data-[state=active]:bg-primary">Sentences</TabsTrigger>
+              <TabsTrigger value="grammar" className="rounded-lg data-[state=active]:bg-primary">Grammar</TabsTrigger>
+            </TabsList>
 
-          {isLoading ? (
-            <div className="flex justify-center h-64 items-center">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-          ) : filteredBookmarks?.length === 0 ? (
-            <div className="text-center py-20 opacity-50">
-              <BookmarkIcon className="w-16 h-16 mx-auto mb-4" />
-              <p className="text-xl">No saved items found.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <AnimatePresence>
-                {filteredBookmarks?.map((item, index) => (
-                  <motion.div
-                    key={item.id}
-                    layout
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ duration: 0.2 }}
-                    className="glass-card p-6 rounded-2xl flex flex-col h-full group border-t-4 border-t-transparent hover:border-t-primary"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <span className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded bg-white/5 ${
-                        item.type === 'word' ? 'text-accent' : 
-                        item.type === 'grammar' ? 'text-blue-400' : 'text-green-400'
-                      }`}>
-                        {item.type}
-                      </span>
-                      <button 
-                        onClick={() => deleteBookmark(item.id)}
-                        className="opacity-0 group-hover:opacity-100 p-2 hover:bg-destructive/10 hover:text-destructive rounded-lg transition-all"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+            <TabsContent value="all" className="mt-0">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {bookmarks?.map((item) => <BookmarkCard key={item.id} item={item} />)}
+              </div>
+            </TabsContent>
+            {['word', 'sentence', 'grammar'].map((type) => (
+              <TabsContent key={type} value={type} className="mt-0">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {bookmarks?.filter(b => b.type === type).map((item) => (
+                    <BookmarkCard key={item.id} item={item} />
+                  ))}
+                </div>
+              </TabsContent>
+            ))}
+          </Tabs>
 
-                    <h3 className="text-xl font-bold mb-2 text-foreground break-words">{item.content}</h3>
-                    <p className="text-primary font-medium mb-4">{item.meaning}</p>
-                    
-                    {item.context && (
-                      <div className="mt-auto pt-4 border-t border-white/5">
-                        <p className="text-sm text-muted-foreground italic line-clamp-3">"{item.context}"</p>
-                      </div>
-                    )}
-                    
-                    <div className="mt-4 text-xs text-muted-foreground/50 flex justify-between items-center">
-                      <span className="capitalize truncate max-w-[150px]">{item.sourceType}</span>
-                      <span>{item.createdAt && format(new Date(item.createdAt), 'MMM d')}</span>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+          {bookmarks?.length === 0 && (
+            <div className="text-center py-20 bg-white/5 rounded-2xl border border-dashed border-white/10">
+              <BookmarkIcon className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+              <h3 className="text-xl font-bold text-muted-foreground">No bookmarks yet</h3>
+              <p className="text-sm text-muted-foreground/60 mt-2">Save items from your analysis to review them later.</p>
             </div>
           )}
         </div>
