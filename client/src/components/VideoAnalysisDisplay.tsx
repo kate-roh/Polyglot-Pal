@@ -90,7 +90,7 @@ export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps
         meaning,
         context: context || data.videoUrl || 'Uploaded file'
       });
-      setSavedItems(prev => new Set(prev).add(key));
+      setNewlySavedItems(prev => new Set(prev).add(key));
       queryClient.invalidateQueries({ queryKey: ['/api/bookmarks'] });
       toast({ 
         title: '저장 완료', 
