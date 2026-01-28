@@ -5,7 +5,7 @@ import { AnalysisDisplay } from "@/components/AnalysisDisplay";
 import { useAnalyzeMedia } from "@/hooks/use-media";
 import { useSaveHistory } from "@/hooks/use-history";
 import { useAddXp } from "@/hooks/use-stats";
-import { type AnalysisResult } from "@shared/routes";
+import { type AnalysisResult } from "@shared/schema";
 
 export default function Dashboard() {
   const { mutate: analyze, isPending } = useAnalyzeMedia();

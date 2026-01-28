@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { BookMarked, MessageSquare, BookOpen, Lightbulb } from "lucide-react";
-import { type AnalysisResult } from "@shared/routes";
+import { type AnalysisResult } from "@shared/schema";
 import { useAddBookmark } from "@/hooks/use-bookmarks";
 
 interface AnalysisDisplayProps {

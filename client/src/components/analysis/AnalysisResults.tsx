@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { type AnalysisResult } from "@shared/routes";
+import { type AnalysisResult } from "@shared/schema";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Bookmark, MessageCircle, BookOpen, Lightbulb } from "lucide-react";
