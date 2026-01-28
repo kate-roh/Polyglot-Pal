@@ -280,8 +280,7 @@ export default function LevelTest() {
                   </span>
                 </div>
 
-                <h3 className="text-lg font-bold mb-2">{currentQuestion.question}</h3>
-                <p className="text-sm text-muted-foreground mb-6">{currentQuestion.questionKo}</p>
+                <h3 className="text-lg font-bold mb-6">{currentQuestion.question}</h3>
 
                 <div className="space-y-3">
                   {currentQuestion.options.map((option, idx) => {
