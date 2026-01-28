@@ -159,11 +159,11 @@ export async function registerRoutes(
       // Add CEFR level to response
       analysisResult.userCefrLevel = cefrLevel;
 
-      // Auto-save to history
+      // Auto-save to history with actual platform type
       const historyUserId = req.user.claims.sub;
       await storage.createHistory({
         userId: historyUserId,
-        type: 'youtube', // Keep as youtube for history compatibility
+        type: platform, // Store actual platform (youtube, tiktok, instagram, other)
         title: analysisResult.videoTitle || `${platform} Session`,
         originalContent: url,
         result: analysisResult

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, Play, FileText, Brain, Loader2, History, Trash2, Film, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,16 @@ export default function MediaStudio() {
   const [startTime, setStartTime] = useState<number | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
   
   const { mutate: analyze, isPending: loadingMedia } = useAnalyzeMedia();
   const { mutate: analyzeVideo, isPending: loadingVideo } = useAnalyzeVideo();
@@ -87,10 +97,16 @@ export default function MediaStudio() {
     setEstimatedTimeLeft(estimatedTotalSeconds);
     
     // Progress simulation for better UX
-    const progressInterval = setInterval(() => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+    progressIntervalRef.current = setInterval(() => {
       setProgress(prev => {
         if (prev >= 85) {
-          clearInterval(progressInterval);
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
           return prev;
         }
         return prev + 3;
@@ -104,14 +120,20 @@ export default function MediaStudio() {
       setEstimatedTimeLeft(Math.round(estimatedTotalSeconds * 0.7));
       analyzeVideo({ url: input.trim(), languageCode: 'en' }, {
         onSuccess: (result) => {
-          clearInterval(progressInterval);
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
           setProgress(100);
           setEstimatedTimeLeft(0);
           setVideoResult(result);
           setInput('');
         },
         onError: (error) => {
-          clearInterval(progressInterval);
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
           setProgress(0);
           setEstimatedTimeLeft(0);
           alert(error instanceof Error ? error.message : "분석 실패");
@@ -154,7 +176,10 @@ export default function MediaStudio() {
       mimeType
     }, {
       onSuccess: (result) => {
-        clearInterval(progressInterval);
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
         setProgress(100);
         setEstimatedTimeLeft(0);
         setSelectedResult(result);
@@ -162,7 +187,10 @@ export default function MediaStudio() {
         setInput('');
       },
       onError: (error) => {
-        clearInterval(progressInterval);
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
         setProgress(0);
         setEstimatedTimeLeft(0);
         alert(error instanceof Error ? error.message : "분석 실패");
