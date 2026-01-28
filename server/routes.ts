@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
+import { registerChatRoutes } from "./replit_integrations/chat/routes";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { GoogleGenAI } from "@google/genai";
@@ -22,6 +23,7 @@ export async function registerRoutes(
   // 1. Setup Auth
   await setupAuth(app);
   registerAuthRoutes(app);
+  registerChatRoutes(app);
 
   // 2. Protected Routes Middleware
   const protect = isAuthenticated;
