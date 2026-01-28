@@ -26,6 +26,8 @@ export default function MediaStudio() {
   const [videoResult, setVideoResult] = useState<VideoAnalysisResult | null>(null);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
+  const [estimatedTimeLeft, setEstimatedTimeLeft] = useState(0);
+  const [startTime, setStartTime] = useState<number | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -74,20 +76,44 @@ export default function MediaStudio() {
     if (activeTab === 'file' && selectedFiles.length === 0) return;
     if (activeTab === 'manual' && !input.trim()) return;
 
+    // Start tracking time
+    const now = Date.now();
+    setStartTime(now);
     setProgress(10);
     setStatusMessage("AI에 연결 중...");
+    
+    // Estimate total time based on content type
+    const estimatedTotalSeconds = activeTab === 'video' ? 45 : activeTab === 'file' ? 60 : 30;
+    setEstimatedTimeLeft(estimatedTotalSeconds);
+    
+    // Progress simulation for better UX
+    const progressInterval = setInterval(() => {
+      setProgress(prev => {
+        if (prev >= 85) {
+          clearInterval(progressInterval);
+          return prev;
+        }
+        return prev + 3;
+      });
+      setEstimatedTimeLeft(prev => Math.max(0, prev - 2));
+    }, 2000);
     
     if (activeTab === 'video') {
       setProgress(30);
       setStatusMessage("영상 분석 중...");
+      setEstimatedTimeLeft(Math.round(estimatedTotalSeconds * 0.7));
       analyzeVideo({ url: input.trim(), languageCode: 'en' }, {
         onSuccess: (result) => {
+          clearInterval(progressInterval);
           setProgress(100);
+          setEstimatedTimeLeft(0);
           setVideoResult(result);
           setInput('');
         },
         onError: (error) => {
+          clearInterval(progressInterval);
           setProgress(0);
+          setEstimatedTimeLeft(0);
           alert(error instanceof Error ? error.message : "분석 실패");
         }
       });
@@ -118,6 +144,9 @@ export default function MediaStudio() {
       title = 'Manual Entry';
     }
 
+    setProgress(50);
+    setStatusMessage("AI 분석 진행 중...");
+    
     analyze({
       type: activeTab,
       content,
@@ -125,13 +154,17 @@ export default function MediaStudio() {
       mimeType
     }, {
       onSuccess: (result) => {
+        clearInterval(progressInterval);
         setProgress(100);
+        setEstimatedTimeLeft(0);
         setSelectedResult(result);
         setSelectedFiles([]);
         setInput('');
       },
       onError: (error) => {
+        clearInterval(progressInterval);
         setProgress(0);
+        setEstimatedTimeLeft(0);
         alert(error instanceof Error ? error.message : "분석 실패");
       }
     });
@@ -190,8 +223,13 @@ export default function MediaStudio() {
                   <p className="text-3xl font-black text-foreground">{Math.round(progress)}%</p>
                 </div>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <p className="text-foreground font-bold text-lg">{statusMessage}</p>
+                {estimatedTimeLeft > 0 && (
+                  <p className="text-muted-foreground text-sm">
+                    예상 남은 시간: 약 {estimatedTimeLeft}초
+                  </p>
+                )}
                 <p className="text-primary/60 text-xs font-bold uppercase tracking-widest animate-pulse">Deep Neural Processing</p>
               </div>
             </div>

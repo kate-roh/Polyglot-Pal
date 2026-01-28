@@ -31,7 +31,7 @@ export async function registerRoutes(
   // === Video Analysis Endpoint (YouTube, TikTok, Instagram) ===
   app.post('/api/video/analyze', protect, async (req: any, res) => {
     try {
-      const userId = req.user?.id;
+      const userId = req.user?.claims?.sub;
       const { url, languageCode } = req.body;
       if (!url) {
         return res.status(400).json({ message: "Video URL required" });
