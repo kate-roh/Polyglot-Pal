@@ -5,7 +5,8 @@ import {
   Bookmark, 
   LogOut, 
   Sparkles,
-  User
+  User,
+  Globe
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ export function Sidebar() {
 
   const navItems = [
     { href: "/dashboard", label: "Media Studio", icon: LayoutDashboard },
+    { href: "/world-tour", label: "World Tour", icon: Globe },
     { href: "/history", label: "History", icon: History },
     { href: "/bookmarks", label: "Bookmarks", icon: Bookmark },
   ];

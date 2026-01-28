@@ -9,6 +9,7 @@ import Dashboard from "@/pages/Dashboard";
 import HistoryPage from "@/pages/History";
 import BookmarksPage from "@/pages/Bookmarks";
 import Landing from "@/pages/Landing";
+import WorldTour from "@/pages/WorldTour";
 import { Loader2 } from "lucide-react";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -56,6 +57,9 @@ function Router() {
       {/* Protected Routes */}
       <Route path="/dashboard">
         <ProtectedRoute component={Dashboard} />
+      </Route>
+      <Route path="/world-tour">
+        <ProtectedRoute component={WorldTour} />
       </Route>
       <Route path="/history">
         <ProtectedRoute component={HistoryPage} />
