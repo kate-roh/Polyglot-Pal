@@ -177,7 +177,7 @@ export async function registerRoutes(
         );
         proficiencyUpdate = {
           newLevel: updateResult.proficiency.cefrLevel,
-          newScore: updateResult.proficiency.score,
+          newScore: updateResult.proficiency.cefrScore,
           scoreChange: updateResult.log.scoreChange
         };
       }
@@ -659,7 +659,7 @@ export async function registerRoutes(
         );
         proficiencyUpdate = {
           newLevel: updateResult.proficiency.cefrLevel,
-          newScore: updateResult.proficiency.score,
+          newScore: updateResult.proficiency.cefrScore,
           scoreChange: updateResult.log.scoreChange
         };
       }
@@ -752,7 +752,7 @@ export async function registerRoutes(
   // Get user's language proficiency
   app.get('/api/proficiency', protect, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       const proficiencies = await storage.getLanguageProficiency(userId);
       res.json(proficiencies);
     } catch (err) {
@@ -764,7 +764,7 @@ export async function registerRoutes(
   // Get proficiency for specific language
   app.get('/api/proficiency/:languageCode', protect, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       const { languageCode } = req.params;
       const proficiency = await storage.getLanguageProficiencyByCode(userId, languageCode);
       res.json(proficiency || { cefrLevel: 'A1', cefrScore: 0 });
@@ -832,7 +832,7 @@ export async function registerRoutes(
   // Submit level test and get result
   app.post('/api/level-test/submit', protect, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       const { languageCode, languageName, answers, questions, testType = 'initial' } = req.body;
       
       // Calculate score
@@ -951,7 +951,7 @@ export async function registerRoutes(
   // Update proficiency based on activity performance
   app.post('/api/proficiency/update', protect, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       const { languageCode, activityType, activityId, performance, reason } = req.body;
       
       // Get current proficiency
@@ -1002,8 +1002,7 @@ export async function registerRoutes(
       await storage.upsertLanguageProficiency(userId, {
         languageCode,
         cefrLevel: newLevel,
-        cefrScore: newScore,
-        updatedAt: new Date()
+        cefrScore: newScore
       });
 
       // Log the change
@@ -1038,7 +1037,7 @@ export async function registerRoutes(
   // Get proficiency history
   app.get('/api/proficiency/:languageCode/history', protect, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       const { languageCode } = req.params;
       const history = await storage.getProficiencyLog(userId, languageCode);
       res.json(history);

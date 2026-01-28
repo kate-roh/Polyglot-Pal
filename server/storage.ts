@@ -199,17 +199,12 @@ export class DatabaseStorage implements IStorage {
       proficiency = await this.upsertLanguageProficiency(userId, {
         languageCode,
         cefrLevel: 'A1',
-        score: 50,
-        vocabularyScore: 50,
-        grammarScore: 50,
-        listeningScore: 50,
-        speakingScore: 50,
-        readingScore: 50
+        cefrScore: 50
       });
     }
 
     const oldLevel = proficiency.cefrLevel;
-    const oldScore = proficiency.score;
+    const oldScore = proficiency.cefrScore;
 
     // Calculate score change based on performance
     // Performance 0-100: <30% = -3~-5, 30-50% = -1~0, 50-70% = +1~+2, 70-90% = +2~+4, >90% = +4~+6
@@ -242,29 +237,11 @@ export class DatabaseStorage implements IStorage {
       newScore = 50; // Reset to middle of new level
     }
 
-    // Update specific skill scores based on activity type
-    const skillUpdates: any = {};
-    if (activityType.includes('quiz') || activityType.includes('vocabulary')) {
-      skillUpdates.vocabularyScore = Math.max(0, Math.min(100, (proficiency.vocabularyScore || 50) + scoreChange));
-    }
-    if (activityType.includes('grammar')) {
-      skillUpdates.grammarScore = Math.max(0, Math.min(100, (proficiency.grammarScore || 50) + scoreChange));
-    }
-    if (activityType.includes('conversation') || activityType.includes('roleplay') || activityType.includes('world_tour')) {
-      skillUpdates.speakingScore = Math.max(0, Math.min(100, (proficiency.speakingScore || 50) + scoreChange));
-      skillUpdates.listeningScore = Math.max(0, Math.min(100, (proficiency.listeningScore || 50) + scoreChange));
-    }
-    if (activityType.includes('media') || activityType.includes('video')) {
-      skillUpdates.readingScore = Math.max(0, Math.min(100, (proficiency.readingScore || 50) + scoreChange));
-      skillUpdates.listeningScore = Math.max(0, Math.min(100, (proficiency.listeningScore || 50) + scoreChange));
-    }
-
     // Update proficiency
     const updatedProficiency = await this.upsertLanguageProficiency(userId, {
       languageCode,
       cefrLevel: newLevel,
-      score: newScore,
-      ...skillUpdates
+      cefrScore: newScore
     });
 
     // Create log entry
@@ -274,6 +251,8 @@ export class DatabaseStorage implements IStorage {
       previousLevel: oldLevel,
       newLevel,
       scoreChange,
+      previousScore: oldScore,
+      newScore,
       reason: details
     });
 
