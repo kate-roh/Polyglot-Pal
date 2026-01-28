@@ -74,12 +74,18 @@ export async function registerRoutes(
         'C2': 'Native-level complexity. Focus on subtle nuances, rare expressions, and cultural depth.'
       };
 
+      // For TikTok/Instagram, we can't access the actual content
+      // So we create learning material about common topics for these platforms
+      const platformNote = platform === 'youtube' 
+        ? `This is a YouTube video. Try to infer content from the video ID: ${videoId}`
+        : `IMPORTANT: You cannot access ${platform} video content directly. Create realistic learning material about a common topic for ${platform} (like daily life, travel, food, trends, fashion, etc). Make it educational and practical for learners. Do NOT pretend to have watched the actual video - instead create ORIGINAL content suitable for language learning.`;
+
       const videoPrompt = `
         You are an expert English language tutor helping Korean learners. 
-        Analyze this ${platform} video and create a comprehensive learning experience.
+        Create a comprehensive language learning experience.
         
-        Video URL: ${url}
         Platform: ${platform}
+        ${platformNote}
         
         USER'S CEFR LEVEL: ${cefrLevel}
         CONTENT ADJUSTMENT: ${levelGuidance[cefrLevel as keyof typeof levelGuidance] || levelGuidance['A1']}
@@ -87,9 +93,10 @@ export async function registerRoutes(
         Output ONLY valid JSON matching this EXACT schema:
         {
           "platform": "${platform}",
-          "videoId": "${videoId}",
+          "videoId": "${videoId || 'generated'}",
           "videoUrl": "${url}",
-          "videoTitle": "Title/description of the video content",
+          "videoTitle": "${platform !== 'youtube' ? 'AI 생성 영어 학습 콘텐츠' : 'Title/description of the video content'}",
+          "isAIGenerated": ${platform !== 'youtube'},
           "summary": "2-3 sentence learning overview in Korean explaining what learners will gain from this video",
           "segments": [
             {
