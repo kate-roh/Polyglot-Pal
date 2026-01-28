@@ -424,5 +424,77 @@ export async function registerRoutes(
     }
   });
 
+  // === World Tour Voice (TTS) ===
+  app.post('/api/world-tour/tts', protect, async (req: any, res) => {
+    try {
+      const { text, language } = req.body;
+      
+      // Use OpenAI for TTS
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      // Get appropriate voice based on language
+      const voiceMap: Record<string, string> = {
+        'French': 'nova',
+        'Spanish': 'nova',
+        'Japanese': 'nova',
+        'Korean': 'nova',
+        'German': 'alloy',
+        'Italian': 'nova',
+        'Portuguese': 'nova',
+        'Mandarin': 'nova',
+        'English': 'alloy'
+      };
+      const voice = voiceMap[language] || 'alloy';
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-audio",
+        modalities: ["text", "audio"],
+        audio: { voice: voice as any, format: "mp3" },
+        messages: [
+          { role: "system", content: "You are a text-to-speech assistant. Repeat the following text exactly as given, with natural pronunciation." },
+          { role: "user", content: `Say this naturally: ${text}` }
+        ]
+      });
+
+      const audioData = (response.choices[0]?.message as any)?.audio?.data ?? "";
+      
+      if (!audioData) {
+        return res.status(500).json({ error: "No audio generated" });
+      }
+
+      res.json({ audio: audioData });
+    } catch (err) {
+      console.error("World tour TTS error:", err);
+      res.status(500).json({ error: "Failed to generate speech" });
+    }
+  });
+
+  // === World Tour Voice (STT) ===
+  app.post('/api/world-tour/stt', protect, async (req: any, res) => {
+    try {
+      const { audio } = req.body;
+      
+      if (!audio) {
+        return res.status(400).json({ error: "Audio data required" });
+      }
+
+      const { speechToText, ensureCompatibleFormat } = await import('./replit_integrations/audio/client');
+      
+      const rawBuffer = Buffer.from(audio, "base64");
+      const { buffer: audioBuffer, format: inputFormat } = await ensureCompatibleFormat(rawBuffer);
+      
+      const transcript = await speechToText(audioBuffer, inputFormat);
+      
+      res.json({ transcript });
+    } catch (err) {
+      console.error("World tour STT error:", err);
+      res.status(500).json({ error: "Failed to transcribe audio" });
+    }
+  });
+
   return httpServer;
 }

@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowRight, Globe, Heart, Send, X, Trophy, RotateCcw, Loader2, Target, User, Lightbulb, Stamp, MapPin } from 'lucide-react';
+import { ArrowRight, Globe, Heart, Send, X, Trophy, RotateCcw, Loader2, Target, User, Lightbulb, Stamp, MapPin, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiRequest } from '@/lib/queryClient';
 import { useAddXp } from '@/hooks/use-stats';
@@ -76,9 +76,136 @@ export default function WorldTour() {
     const saved = localStorage.getItem('polyglot_completed_cities');
     return saved ? JSON.parse(saved) : [];
   });
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const { mutate: addXp } = useAddXp();
+
+  // Voice recording handlers
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.start(100);
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Microphone access denied:', err);
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') return;
+    
+    return new Promise<Blob>((resolve) => {
+      const recorder = mediaRecorderRef.current!;
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        recorder.stream.getTracks().forEach(t => t.stop());
+        setIsRecording(false);
+        resolve(blob);
+      };
+      recorder.stop();
+    });
+  };
+
+  const handleVoiceInput = async () => {
+    if (isRecording) {
+      const audioBlob = await stopRecording();
+      if (!audioBlob || audioBlob.size === 0) return;
+
+      setIsTranscribing(true);
+      try {
+        // Convert blob to base64
+        const base64Audio = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            resolve(result.split(',')[1]);
+          };
+          reader.readAsDataURL(audioBlob);
+        });
+
+        const response = await apiRequest('POST', '/api/world-tour/stt', { audio: base64Audio });
+        const data = await response.json();
+        
+        if (data.transcript) {
+          setInput(data.transcript);
+        }
+      } catch (err) {
+        console.error('STT error:', err);
+      } finally {
+        setIsTranscribing(false);
+      }
+    } else {
+      startRecording();
+    }
+  };
+
+  const playNpcMessage = async (messageId: string, text: string) => {
+    if (!activeDestination) return;
+    
+    if (playingMessageId === messageId) {
+      // Stop current playback
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setPlayingMessageId(null);
+      setIsPlayingAudio(false);
+      return;
+    }
+
+    setPlayingMessageId(messageId);
+    setIsPlayingAudio(true);
+
+    try {
+      const response = await apiRequest('POST', '/api/world-tour/tts', {
+        text,
+        language: activeDestination.language.name
+      });
+      const data = await response.json();
+
+      if (data.audio) {
+        const audioBlob = new Blob(
+          [Uint8Array.from(atob(data.audio), c => c.charCodeAt(0))],
+          { type: 'audio/mp3' }
+        );
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audioRef.current = audio;
+
+        audio.onended = () => {
+          setPlayingMessageId(null);
+          setIsPlayingAudio(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+
+        audio.onerror = () => {
+          setPlayingMessageId(null);
+          setIsPlayingAudio(false);
+        };
+
+        audio.play();
+      }
+    } catch (err) {
+      console.error('TTS error:', err);
+      setPlayingMessageId(null);
+      setIsPlayingAudio(false);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -369,6 +496,19 @@ export default function WorldTour() {
                       : 'bg-muted text-foreground rounded-bl-sm'
                   }`}>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                    {msg.role === 'npc' && (
+                      <button
+                        onClick={() => playNpcMessage(msg.id, msg.content)}
+                        className="mt-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        data-testid={`button-play-audio-${msg.id}`}
+                      >
+                        {playingMessageId === msg.id ? (
+                          <><VolumeX className="w-3 h-3" /> Stop</>
+                        ) : (
+                          <><Volume2 className="w-3 h-3" /> Listen</>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -459,10 +599,26 @@ export default function WorldTour() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
               placeholder={`Speak to ${activeDestination.mission.characterName}...`}
-              disabled={isLoading || gameState.isGameOver}
+              disabled={isLoading || gameState.isGameOver || isRecording || isTranscribing}
               className="flex-1"
               data-testid="input-chat"
             />
+            <Button
+              variant={isRecording ? "destructive" : "outline"}
+              size="icon"
+              onClick={handleVoiceInput}
+              disabled={isLoading || gameState.isGameOver || isTranscribing}
+              className={`shrink-0 ${isRecording ? 'animate-pulse' : ''}`}
+              data-testid="button-mic"
+            >
+              {isTranscribing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isRecording ? (
+                <MicOff className="w-4 h-4" />
+              ) : (
+                <Mic className="w-4 h-4" />
+              )}
+            </Button>
             <Button 
               onClick={sendMessage} 
               disabled={isLoading || !input.trim() || gameState.isGameOver}

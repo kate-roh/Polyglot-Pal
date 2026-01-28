@@ -39,10 +39,12 @@ args = "npm run dev"
 waitForPort = 5000
 
 [agent]
-integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_gemini_ai_integrations:2.0.0"]
+integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_gemini_ai_integrations:2.0.0", "javascript_openai_ai_integrations:2.0.0"]
 
 [userenv]
 
 [userenv.shared]
 AI_INTEGRATIONS_GEMINI_BASE_URL = "http://localhost:1106/modelfarm/gemini"
 AI_INTEGRATIONS_GEMINI_API_KEY = "_DUMMY_API_KEY_"
+AI_INTEGRATIONS_OPENAI_BASE_URL = "http://localhost:1106/modelfarm/openai"
+AI_INTEGRATIONS_OPENAI_API_KEY = "_DUMMY_API_KEY_"

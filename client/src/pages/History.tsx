@@ -1,11 +1,11 @@
-import { Sidebar } from "@/components/layout/Sidebar";
+import { Navigation } from "@/components/Navigation";
 import { useHistory, useDeleteHistory } from "@/hooks/use-history";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-import { Trash2, Youtube, FileText, Upload, Calendar } from "lucide-react";
+import { Trash2, Youtube, FileText, Upload, Calendar, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { AnalysisResults } from "@/components/analysis/AnalysisResults";
+import { AnalysisDisplay } from "@/components/AnalysisDisplay";
 import { useState } from "react";
 import { 
   Dialog, 
@@ -19,24 +19,36 @@ export default function HistoryPage() {
   const { mutate: deleteHistory } = useDeleteHistory();
   const [selectedItem, setSelectedItem] = useState<any>(null);
 
-  if (isLoading) return null; // Or skeleton
+  if (isLoading) {
+    return (
+      <div className="flex flex-col md:flex-row h-screen bg-background overflow-hidden">
+        <Navigation />
+        <main className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </main>
+      </div>
+    );
+  }
 
   const getIcon = (type: string) => {
     switch (type) {
       case 'youtube': return <Youtube className="w-5 h-5 text-red-400" />;
       case 'file': return <Upload className="w-5 h-5 text-blue-400" />;
-      default: return <FileText className="w-5 h-5 text-gray-400" />;
+      default: return <FileText className="w-5 h-5 text-muted-foreground" />;
     }
   };
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <Sidebar />
-      <main className="flex-1 md:ml-64 p-4 md:p-8 lg:p-12 overflow-y-auto custom-scrollbar">
-        <div className="max-w-5xl mx-auto space-y-8">
-          <header>
-            <h1 className="text-4xl font-display font-bold mb-2">History</h1>
-            <p className="text-muted-foreground text-lg">Your past learning sessions.</p>
+    <div className="flex flex-col md:flex-row h-screen bg-background overflow-hidden font-body text-foreground">
+      <Navigation />
+      <main className="flex-1 overflow-y-auto relative scroll-smooth">
+        <div className="absolute top-0 left-0 w-full h-96 bg-primary/10 blur-[100px] pointer-events-none z-0" />
+        <div className="relative z-10 max-w-5xl mx-auto px-4 md:px-8 py-12 space-y-8">
+          <header className="text-center md:text-left">
+            <h1 className="text-4xl md:text-5xl font-display font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">
+              Learning <span className="text-primary">History</span>
+            </h1>
+            <p className="text-lg text-muted-foreground max-w-2xl">Your past learning sessions and analyses.</p>
           </header>
 
           <div className="grid gap-4">
@@ -84,7 +96,7 @@ export default function HistoryPage() {
             ))}
 
             {history?.length === 0 && (
-              <div className="text-center py-20 bg-white/5 rounded-2xl border border-dashed border-white/10">
+              <div className="text-center py-20 bg-muted/20 rounded-2xl border border-dashed border-border">
                 <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
                 <h3 className="text-xl font-bold text-muted-foreground">No history yet</h3>
                 <p className="text-sm text-muted-foreground/60 mt-2">Start a new analysis to see it here.</p>
@@ -99,9 +111,9 @@ export default function HistoryPage() {
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold font-display">{selectedItem?.title}</DialogTitle>
           </DialogHeader>
-          {selectedItem && (
+          {selectedItem && selectedItem.result && (
             <div className="mt-4">
-              <AnalysisResults result={selectedItem.result} sourceType={selectedItem.type} />
+              <AnalysisDisplay data={selectedItem.result} sourceType={selectedItem.type} />
             </div>
           )}
         </DialogContent>
