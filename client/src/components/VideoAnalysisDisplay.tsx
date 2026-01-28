@@ -1,11 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Volume2, Mic, Heart, BookOpen, MessageSquare, HelpCircle, Users, Loader2, Check, X, ExternalLink } from 'lucide-react';
+import { Volume2, Mic, Heart, BookOpen, MessageSquare, HelpCircle, Users, Loader2, Check, X, ExternalLink, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useBookmarks } from '@/hooks/use-bookmarks';
 import type { VideoAnalysisResult, VideoSegment } from '@shared/schema';
 
 interface VideoAnalysisDisplayProps {
@@ -13,27 +13,34 @@ interface VideoAnalysisDisplayProps {
   onSeek?: (seconds: number) => void;
 }
 
-type TabType = 'segments' | 'roleplay' | 'quiz' | 'conversation';
+type TabType = 'conversation' | 'roleplay' | 'quiz';
 
 export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('segments');
+  const [activeTab, setActiveTab] = useState<TabType>('conversation');
   const [playingTTS, setPlayingTTS] = useState<string | null>(null);
-  const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
+  const [newlySavedItems, setNewlySavedItems] = useState<Set<string>>(new Set());
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
   const [showQuizResults, setShowQuizResults] = useState(false);
   const playerRef = useRef<HTMLIFrameElement>(null);
   const { toast } = useToast();
+  const { data: bookmarks } = useBookmarks();
+
+  const savedItems = useMemo(() => {
+    const items = new Set(newlySavedItems);
+    bookmarks?.forEach((b: any) => {
+      items.add(`${b.type}-${b.content}`);
+    });
+    return items;
+  }, [bookmarks, newlySavedItems]);
 
   const isYoutube = data.platform === 'youtube';
   const isUploadedFile = !data.platform && !data.videoId;
 
   const seekToTimestamp = (seconds: number) => {
-    // If external onSeek provided (for uploaded files), use that
     if (onSeek) {
       onSeek(seconds);
       return;
     }
-    // Otherwise use YouTube API
     if (isYoutube && playerRef.current?.contentWindow) {
       playerRef.current.contentWindow.postMessage(
         JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }),
@@ -70,7 +77,10 @@ export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps
 
   const saveItem = async (type: 'word' | 'phrase' | 'sentence', content: string, meaning: string, context?: string) => {
     const key = `${type}-${content}`;
-    if (savedItems.has(key)) return;
+    if (savedItems.has(key)) {
+      toast({ title: '이미 저장됨', description: '이미 보관함에 저장되어 있습니다.' });
+      return;
+    }
 
     try {
       await apiRequest('POST', '/api/bookmarks', {
@@ -82,17 +92,19 @@ export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps
       });
       setSavedItems(prev => new Set(prev).add(key));
       queryClient.invalidateQueries({ queryKey: ['/api/bookmarks'] });
-      toast({ title: '저장됨!', description: `${type === 'sentence' ? '문장' : type === 'phrase' ? '표현' : '단어'}이 저장되었습니다.` });
+      toast({ 
+        title: '저장 완료', 
+        description: `${type === 'sentence' ? '문장' : type === 'phrase' ? '표현' : '단어'}이 보관함에 저장되었습니다.` 
+      });
     } catch (err) {
       toast({ title: '저장 실패', variant: 'destructive' });
     }
   };
 
   const tabs = [
-    { id: 'segments' as TabType, label: '학습하기', icon: BookOpen },
-    { id: 'roleplay' as TabType, label: '롤플레이', icon: Users },
-    { id: 'quiz' as TabType, label: '복습퀴즈', icon: HelpCircle },
-    { id: 'conversation' as TabType, label: '대화연습', icon: MessageSquare }
+    { id: 'conversation' as TabType, label: '전체 대화 연습', icon: MessageSquare },
+    { id: 'roleplay' as TabType, label: '롤플레이 미션', icon: Users },
+    { id: 'quiz' as TabType, label: '복습퀴즈', icon: HelpCircle }
   ];
 
   const getPlatformColor = () => {
@@ -115,7 +127,7 @@ export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps
 
   return (
     <div className="space-y-6">
-      {/* Only show video player for YouTube - uploaded files show player separately */}
+      {/* YouTube Player */}
       {isYoutube && (
         <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black">
           <iframe
@@ -129,7 +141,7 @@ export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps
         </div>
       )}
       
-      {/* Show external link card for TikTok/Instagram */}
+      {/* External link for TikTok/Instagram */}
       {!isYoutube && !isUploadedFile && data.videoUrl && (
         <Card className="p-6 rounded-2xl text-center">
           <div className={`w-16 h-16 ${getPlatformColor()} rounded-2xl flex items-center justify-center mx-auto mb-4`}>
@@ -150,34 +162,13 @@ export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps
         </Card>
       )}
 
-      {/* CEFR Level Display */}
-      {data.cefrLevel && (
-        <Card className="p-4 rounded-2xl border-blue-500/20 bg-blue-500/5">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-bold rounded-lg text-sm">
-              CEFR {data.cefrLevel}
-            </div>
-            {data.cefrExplanation && (
-              <p className="text-muted-foreground text-sm flex-1">{data.cefrExplanation}</p>
-            )}
-          </div>
-        </Card>
-      )}
-
-      <Card className="p-4 rounded-2xl border-primary/20 bg-primary/5">
-        <h3 className="font-bold text-foreground mb-2 flex items-center gap-2">
-          <BookOpen className="w-5 h-5 text-primary" />
-          학습개요
-        </h3>
-        <p className="text-muted-foreground text-sm leading-relaxed">{data.summary}</p>
-      </Card>
-
-      <div className="flex gap-2 p-1 bg-muted/50 rounded-2xl">
+      {/* Tab Navigation */}
+      <div className="flex gap-2 p-1 bg-muted/50 rounded-2xl overflow-x-auto">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 py-3 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 py-3 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
               activeTab === tab.id 
                 ? 'bg-primary text-primary-foreground shadow-lg' 
                 : 'text-muted-foreground hover:text-foreground'
@@ -185,22 +176,45 @@ export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps
             data-testid={`tab-${tab.id}`}
           >
             <tab.icon className="w-4 h-4" />
-            <span className="hidden sm:inline">{tab.label}</span>
+            <span>{tab.label}</span>
           </button>
         ))}
       </div>
 
       <AnimatePresence mode="wait">
-        {activeTab === 'segments' && (
+        {/* 전체 대화 연습 - Main Learning Tab */}
+        {activeTab === 'conversation' && (
           <motion.div
-            key="segments"
+            key="conversation"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             className="space-y-4"
           >
+            {/* CEFR Level & Summary */}
+            <Card className="p-4 rounded-2xl border-primary/20 bg-primary/5">
+              <div className="flex items-center gap-3 flex-wrap mb-3">
+                {data.cefrLevel && (
+                  <div className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-bold rounded-lg text-sm">
+                    CEFR {data.cefrLevel}
+                  </div>
+                )}
+                <h3 className="font-bold text-foreground flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-primary" />
+                  학습개요
+                </h3>
+              </div>
+              <p className="text-muted-foreground text-sm leading-relaxed">{data.summary}</p>
+              {data.cefrExplanation && (
+                <p className="text-xs text-muted-foreground mt-2 italic">{data.cefrExplanation}</p>
+              )}
+            </Card>
+
+            {/* Segment Cards - Conversation Style */}
+            <h3 className="font-bold text-lg text-foreground px-1">전체 대화 연습</h3>
+            
             {data.segments.map((segment, idx) => (
-              <SegmentCard
+              <ConversationSegmentCard
                 key={idx}
                 segment={segment}
                 onSeek={seekToTimestamp}
@@ -214,6 +228,7 @@ export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps
           </motion.div>
         )}
 
+        {/* 롤플레이 미션 */}
         {activeTab === 'roleplay' && data.roleplayMission && (
           <motion.div
             key="roleplay"
@@ -253,6 +268,7 @@ export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps
           </motion.div>
         )}
 
+        {/* 복습퀴즈 */}
         {activeTab === 'quiz' && data.quizQuestions && (
           <motion.div
             key="quiz"
@@ -313,62 +329,12 @@ export function VideoAnalysisDisplay({ data, onSeek }: VideoAnalysisDisplayProps
             )}
           </motion.div>
         )}
-
-        {activeTab === 'conversation' && data.conversationPractice && (
-          <motion.div
-            key="conversation"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-3"
-          >
-            <Card className="p-4 rounded-2xl">
-              <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-primary" />
-                전체 대화 연습
-              </h3>
-              <div className="space-y-3">
-                {data.conversationPractice.map((line, idx) => (
-                  <div 
-                    key={idx} 
-                    className={`flex gap-3 ${line.speaker === 'A' ? '' : 'flex-row-reverse'}`}
-                  >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${
-                      line.speaker === 'A' ? 'bg-blue-500' : 'bg-orange-500'
-                    }`}>
-                      {line.speaker}
-                    </div>
-                    <div className={`flex-1 max-w-[80%] ${line.speaker === 'A' ? '' : 'text-right'}`}>
-                      <div className={`inline-block p-3 rounded-2xl ${
-                        line.speaker === 'A' ? 'bg-blue-500/10 rounded-tl-none' : 'bg-orange-500/10 rounded-tr-none'
-                      }`}>
-                        <p className="text-foreground font-medium">{line.line}</p>
-                        <p className="text-muted-foreground text-sm mt-1">{line.translation}</p>
-                      </div>
-                      <button
-                        onClick={() => playTTS(line.line, `conv-${idx}`)}
-                        className="mt-1 p-1 hover:bg-muted rounded-lg transition-colors inline-flex"
-                        data-testid={`button-tts-conv-${idx}`}
-                      >
-                        {playingTTS === `conv-${idx}` ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                        ) : (
-                          <Volume2 className="w-4 h-4 text-muted-foreground" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </motion.div>
-        )}
       </AnimatePresence>
     </div>
   );
 }
 
-interface SegmentCardProps {
+interface ConversationSegmentCardProps {
   segment: VideoSegment;
   onSeek: (seconds: number) => void;
   onTTS: (text: string, id: string) => void;
@@ -378,90 +344,142 @@ interface SegmentCardProps {
   index: number;
 }
 
-function SegmentCard({ segment, onSeek, onTTS, onSave, playingTTS, savedItems, index }: SegmentCardProps) {
+function ConversationSegmentCard({ segment, onSeek, onTTS, onSave, playingTTS, savedItems, index }: ConversationSegmentCardProps) {
+  const isSentenceSaved = savedItems.has(`sentence-${segment.sentence}`);
+  
   return (
-    <Card className="rounded-3xl overflow-hidden border-border/50">
-      <div className="p-4 space-y-3">
-        <div className="flex items-start gap-3">
+    <Card className="rounded-3xl overflow-hidden border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-950/20">
+      <div className="p-5 space-y-4">
+        {/* Header: Timestamp + Controls */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Timestamp Badge */}
           <button
             onClick={() => onSeek(segment.timestampSeconds)}
-            className="px-3 py-1.5 bg-blue-500 text-white text-xs font-bold rounded-lg hover:bg-blue-600 transition-colors shrink-0"
+            className="px-4 py-2 bg-blue-500 text-white text-sm font-bold rounded-xl hover:bg-blue-600 transition-colors shadow-md"
             data-testid={`button-timestamp-${index}`}
           >
             {segment.timestamp}
           </button>
-          <div className="flex gap-2 shrink-0">
+          
+          {/* Control Icons */}
+          <div className="flex gap-1 ml-auto">
+            {/* TTS Button */}
             <button
               onClick={() => onTTS(segment.sentence, `seg-${index}`)}
-              className="p-2 hover:bg-muted rounded-lg transition-colors"
+              className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center hover:bg-blue-200 dark:hover:bg-blue-800/50 transition-colors"
               data-testid={`button-tts-${index}`}
             >
               {playingTTS === `seg-${index}` ? (
-                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
               ) : (
-                <Volume2 className="w-5 h-5 text-muted-foreground" />
+                <Volume2 className="w-5 h-5 text-blue-600" />
               )}
             </button>
-            <button className="p-2 hover:bg-muted rounded-lg transition-colors" data-testid={`button-mic-${index}`}>
+            
+            {/* Mic Button - Coming Soon */}
+            <button 
+              className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center cursor-not-allowed opacity-50"
+              data-testid={`button-mic-${index}`}
+              disabled
+              title="Shadowing 기능 준비중"
+            >
               <Mic className="w-5 h-5 text-muted-foreground" />
             </button>
+            
+            {/* Heart/Save Button */}
             <button
               onClick={() => onSave('sentence', segment.sentence, segment.translation, segment.expressionNote)}
-              className={`p-2 hover:bg-muted rounded-lg transition-colors ${
-                savedItems.has(`sentence-${segment.sentence}`) ? 'text-pink-500' : ''
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                isSentenceSaved 
+                  ? 'bg-pink-500 text-white' 
+                  : 'bg-pink-100 dark:bg-pink-900/30 hover:bg-pink-200 dark:hover:bg-pink-800/50'
               }`}
               data-testid={`button-save-sentence-${index}`}
             >
-              <Heart className={`w-5 h-5 ${savedItems.has(`sentence-${segment.sentence}`) ? 'fill-current' : ''}`} />
+              <Heart className={`w-5 h-5 ${isSentenceSaved ? 'fill-current' : 'text-pink-500'}`} />
             </button>
           </div>
         </div>
 
-        <div className="space-y-2">
-          <p className="text-lg font-semibold text-foreground leading-relaxed">{segment.sentence}</p>
-          <p className="text-muted-foreground">{segment.translation}</p>
+        {/* Main Sentence */}
+        <p className="text-xl font-bold text-foreground leading-relaxed">
+          {segment.sentence}
+        </p>
+
+        {/* Korean Translation - Chat Bubble Style */}
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
+            <span className="text-white text-xs font-bold">번역</span>
+          </div>
+          <div className="flex-1 p-3 bg-purple-100 dark:bg-purple-900/30 rounded-2xl rounded-tl-none">
+            <p className="text-foreground">{segment.translation}</p>
+          </div>
         </div>
 
+        {/* Expression Note - Chat Bubble Style */}
         {segment.expressionNote && (
-          <div className="p-3 bg-purple-500/10 rounded-xl border-l-4 border-purple-500">
-            <p className="text-sm text-foreground">{segment.expressionNote}</p>
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0">
+              <Lightbulb className="w-4 h-4 text-white" />
+            </div>
+            <div className="flex-1 p-3 bg-amber-100 dark:bg-amber-900/30 rounded-2xl rounded-tl-none">
+              <p className="text-sm text-foreground">{segment.expressionNote}</p>
+            </div>
           </div>
         )}
 
+        {/* Vocabulary & Phrases Cards */}
         {((segment.vocabulary && segment.vocabulary.length > 0) || (segment.phrases && segment.phrases.length > 0)) && (
-          <div className="flex flex-wrap gap-2 pt-2">
-            {segment.vocabulary?.map((v, vIdx) => (
-              <button
-                key={`vocab-${vIdx}`}
-                onClick={() => onSave('word', v.word, v.meaning)}
-                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors ${
-                  savedItems.has(`word-${v.word}`)
-                    ? 'bg-pink-500/20 text-pink-500'
-                    : 'bg-muted hover:bg-muted/80'
-                }`}
-                data-testid={`button-save-vocab-${index}-${vIdx}`}
-              >
-                <span className="font-medium">{v.word}</span>
-                <span className="text-muted-foreground">{v.meaning}</span>
-                <Heart className={`w-3 h-3 ${savedItems.has(`word-${v.word}`) ? 'fill-current text-pink-500' : 'text-muted-foreground'}`} />
-              </button>
-            ))}
-            {segment.phrases?.map((p, pIdx) => (
-              <button
-                key={`phrase-${pIdx}`}
-                onClick={() => onSave('phrase', p.phrase, p.meaning)}
-                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors ${
-                  savedItems.has(`phrase-${p.phrase}`)
-                    ? 'bg-orange-500/20 text-orange-500'
-                    : 'bg-orange-500/10 hover:bg-orange-500/20'
-                }`}
-                data-testid={`button-save-phrase-${index}-${pIdx}`}
-              >
-                <span className="font-medium">{p.phrase}</span>
-                <span className="text-muted-foreground">{p.meaning}</span>
-                <Heart className={`w-3 h-3 ${savedItems.has(`phrase-${p.phrase}`) ? 'fill-current text-orange-500' : 'text-muted-foreground'}`} />
-              </button>
-            ))}
+          <div className="space-y-2 pt-2">
+            {/* Phrases (multi-word expressions) */}
+            {segment.phrases?.map((p, pIdx) => {
+              const isPhraseSaved = savedItems.has(`phrase-${p.phrase}`);
+              return (
+                <div
+                  key={`phrase-${pIdx}`}
+                  className="flex items-center gap-3 p-3 bg-orange-50 dark:bg-orange-950/30 rounded-xl border border-orange-200 dark:border-orange-800"
+                >
+                  <div className="flex-1">
+                    <p className="font-bold text-foreground">{p.phrase}</p>
+                    <p className="text-sm text-orange-600 dark:text-orange-400">{p.meaning}</p>
+                  </div>
+                  <button
+                    onClick={() => onSave('phrase', p.phrase, p.meaning)}
+                    className={`p-2 rounded-full transition-colors ${
+                      isPhraseSaved 
+                        ? 'bg-pink-500 text-white' 
+                        : 'bg-pink-100 dark:bg-pink-900/30 hover:bg-pink-200'
+                    }`}
+                    data-testid={`button-save-phrase-${index}-${pIdx}`}
+                  >
+                    <Heart className={`w-4 h-4 ${isPhraseSaved ? 'fill-current' : 'text-pink-500'}`} />
+                  </button>
+                </div>
+              );
+            })}
+            
+            {/* Individual Words */}
+            <div className="flex flex-wrap gap-2">
+              {segment.vocabulary?.map((v, vIdx) => {
+                const isWordSaved = savedItems.has(`word-${v.word}`);
+                return (
+                  <button
+                    key={`vocab-${vIdx}`}
+                    onClick={() => onSave('word', v.word, v.meaning)}
+                    className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors border ${
+                      isWordSaved
+                        ? 'bg-pink-500/20 border-pink-500 text-pink-600'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-pink-300'
+                    }`}
+                    data-testid={`button-save-vocab-${index}-${vIdx}`}
+                  >
+                    <span className="font-bold">{v.word}</span>
+                    <span className="text-muted-foreground">{v.meaning}</span>
+                    <Heart className={`w-3 h-3 ${isWordSaved ? 'fill-current text-pink-500' : 'text-muted-foreground'}`} />
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
