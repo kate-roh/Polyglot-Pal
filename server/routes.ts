@@ -258,29 +258,87 @@ export async function registerRoutes(
     }
   });
 
+  // === World Tour Hint ===
+  app.post('/api/world-tour/hint', protect, async (req: any, res) => {
+    try {
+      const { destination, mission, language, messages } = req.body;
+      
+      const prompt = `
+        A language learner is practicing ${language} in a roleplay scenario.
+        Mission: "${mission.scenario}"
+        Character: ${mission.characterName} (${mission.characterRole})
+        
+        Recent conversation:
+        ${messages.slice(-4).map((m: any) => `${m.role.toUpperCase()}: ${m.content}`).join('\n')}
+        
+        Generate 3 helpful phrases the learner could say next in ${language}.
+        Each phrase should be natural, polite, and help complete the mission.
+        
+        Return ONLY valid JSON:
+        {
+          "hints": [
+            {"text": "phrase in ${language}", "translation": "English translation"},
+            {"text": "phrase in ${language}", "translation": "English translation"},
+            {"text": "phrase in ${language}", "translation": "English translation"}
+          ]
+        }
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      const resultText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!resultText) throw new Error("No response from AI");
+
+      res.json(JSON.parse(resultText));
+    } catch (err) {
+      console.error("World tour hint error:", err);
+      res.status(500).json({ 
+        hints: [
+          { text: "Could you help me please?", translation: "도와주시겠어요?" },
+          { text: "I would like to order...", translation: "주문하고 싶은데요..." },
+          { text: "Thank you very much!", translation: "정말 감사합니다!" }
+        ]
+      });
+    }
+  });
+
   // === World Tour Chat ===
   app.post('/api/world-tour/chat', protect, async (req: any, res) => {
     try {
       const { destination, mission, language, messages, currentHearts } = req.body;
       
       const systemPrompt = `
-        You are "${mission.characterName}", a ${mission.characterRole} in ${language}.
-        The user is a language learner on a mission: "${mission.scenario}"
+        You are "${mission.characterName}", a real ${mission.characterRole} living in a city where ${language} is spoken.
         
-        ROLEPLAY RULES:
-        1. Stay in character as ${mission.characterName}
-        2. Respond primarily in ${language} with helpful English hints in parentheses when needed
-        3. Be patient and encouraging with language mistakes
-        4. Guide the conversation toward completing the mission objectives
-        5. React naturally to what the user says
+        CRITICAL: You are NOT a language teacher or tutor. You are a LOCAL PERSON with personality.
         
-        POLITENESS CHECK:
-        - If the user is rude, dismissive, or uses inappropriate language, include [HEART_PENALTY:-1] in your response
-        - If the user makes a good effort with ${language}, be encouraging
+        YOUR PERSONALITY:
+        - You're a bit impatient with tourists who don't greet properly
+        - You appreciate when people TRY to speak ${language}, even with mistakes
+        - You DON'T correct grammar. Instead, if confused, say things like "Pardon?" or "Sorry, what?"
+        - If someone is rude (no greeting, demanding tone), you get visibly annoyed
+        - You're helpful to polite customers
         
-        Current objectives: ${mission.objectives.join(', ')}
+        RESPONSE RULES:
+        1. Respond primarily in ${language} with brief English translations in parentheses
+        2. Stay in character - you're working, you have other customers
+        3. NEVER explain grammar or say "you should say X instead"
+        4. React naturally: confused? Ask them to repeat. Rude? Show displeasure.
+        5. Keep responses SHORT (1-2 sentences) like real conversations
         
-        Keep responses conversational and natural (2-3 sentences max).
+        PENALTY SYSTEM:
+        - If the user says something RUDE or INAPPROPRIATE (no greeting, demanding, offensive):
+          Add [HEART_PENALTY:-1] at the END of your response
+        - Examples of rude: "Give me coffee", "Hey you!", skipping greetings, being dismissive
+        - NOT rude: grammar mistakes, wrong words, mixing languages (these are just confusing, not rude)
+        
+        Current situation: "${mission.scenario}"
+        
+        Remember: You're a real person, not a robot or teacher. Act naturally!
       `;
 
       const contents = [
