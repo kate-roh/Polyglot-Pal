@@ -24,6 +24,7 @@ export default function MediaStudio() {
   const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
   const [selectedResult, setSelectedResult] = useState<AnalysisResult | null>(null);
   const [videoResult, setVideoResult] = useState<VideoAnalysisResult | null>(null);
+  const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
   const [estimatedTimeLeft, setEstimatedTimeLeft] = useState(0);
@@ -31,6 +32,7 @@ export default function MediaStudio() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const uploadedVideoRef = useRef<HTMLVideoElement>(null);
   
   // Cleanup interval on unmount
   useEffect(() => {
@@ -153,6 +155,15 @@ export default function MediaStudio() {
       if (file) {
         mimeType = file.type;
         title = file.name;
+        
+        // Create blob URL for video playback if it's a video file
+        if (file.type.startsWith('video/')) {
+          const blobUrl = URL.createObjectURL(file);
+          setUploadedVideoUrl(blobUrl);
+        } else {
+          setUploadedVideoUrl(null);
+        }
+        
         try {
           content = await readFileAsBase64(file);
           setProgress(40);
@@ -220,19 +231,54 @@ export default function MediaStudio() {
 
   // Show text/file analysis result
   if (selectedResult) {
+    const handleSeekUploadedVideo = (seconds: number) => {
+      if (uploadedVideoRef.current) {
+        uploadedVideoRef.current.currentTime = seconds;
+        uploadedVideoRef.current.play();
+      }
+    };
+
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
         <main className="p-4 md:p-8 max-w-5xl mx-auto">
           <Button 
             variant="ghost" 
-            onClick={() => setSelectedResult(null)}
+            onClick={() => {
+              setSelectedResult(null);
+              if (uploadedVideoUrl) {
+                URL.revokeObjectURL(uploadedVideoUrl);
+                setUploadedVideoUrl(null);
+              }
+            }}
             className="mb-4"
             data-testid="button-back"
           >
             ← 스튜디오로 돌아가기
           </Button>
-          <AnalysisDisplay data={selectedResult} sourceType={activeTab === 'file' ? 'file' : 'manual'} />
+          
+          {uploadedVideoUrl && (
+            <div className="mb-6">
+              <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black">
+                <video
+                  ref={uploadedVideoRef}
+                  src={uploadedVideoUrl}
+                  className="w-full h-full"
+                  controls
+                  data-testid="uploaded-video-player"
+                />
+              </div>
+              <p className="text-sm text-muted-foreground mt-2 text-center">
+                업로드된 영상을 재생하세요
+              </p>
+            </div>
+          )}
+          
+          <AnalysisDisplay 
+            data={selectedResult} 
+            sourceType={activeTab === 'file' ? 'file' : 'manual'} 
+            onSeek={uploadedVideoUrl ? handleSeekUploadedVideo : undefined}
+          />
         </main>
       </div>
     );

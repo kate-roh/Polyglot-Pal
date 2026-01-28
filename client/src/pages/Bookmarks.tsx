@@ -47,8 +47,9 @@ export default function BookmarksPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 -mt-1 -mr-1"
+            className="text-muted-foreground hover:text-red-400 -mt-1 -mr-1"
             onClick={() => deleteBookmark(item.id)}
+            data-testid={`button-delete-bookmark-${item.id}`}
           >
             <Trash2 className="w-4 h-4" />
           </Button>
