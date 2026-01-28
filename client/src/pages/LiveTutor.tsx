@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Phone, PhoneOff, Mic, MicOff, Lightbulb, MessageCircle, ArrowLeft, Loader2 } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Lightbulb, MessageCircle, ArrowLeft, Loader2, Volume2, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -23,9 +23,14 @@ export default function LiveTutor() {
   const [isConnected, setIsConnected] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const availableLanguages = Array.from(new Set(DESTINATIONS.map(d => JSON.stringify(d.language))))
     .map(s => JSON.parse(s)) as Language[];
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const startSession = () => {
     setIsConnected(true);
@@ -181,11 +186,15 @@ export default function LiveTutor() {
             {isLoading && (
               <div className="flex justify-start">
                 <div className="bg-muted p-4 rounded-2xl rounded-bl-none flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm text-muted-foreground">Typing...</span>
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
 
           {isConnected ? (
@@ -195,11 +204,16 @@ export default function LiveTutor() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
                 placeholder="Type your message..."
-                className="flex-1"
+                className="flex-1 rounded-xl"
                 data-testid="input-message"
               />
-              <Button onClick={sendMessage} disabled={isLoading} data-testid="button-send">
-                Send
+              <Button 
+                onClick={sendMessage} 
+                disabled={isLoading || !input.trim()} 
+                className="rounded-xl"
+                data-testid="button-send"
+              >
+                <Send className="w-4 h-4" />
               </Button>
             </div>
           ) : (

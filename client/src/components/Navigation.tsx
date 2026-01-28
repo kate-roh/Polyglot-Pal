@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   LayoutDashboard, 
@@ -13,19 +14,22 @@ import {
   GraduationCap,
   Target,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  ChevronRight
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useUserStats } from "@/hooks/use-stats";
 import { useAllProficiencies, CEFR_COLORS, CEFR_LABELS } from "@/hooks/use-proficiency";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { LevelInfoModal } from "@/components/LevelInfoModal";
 
 export function Navigation() {
   const [location] = useLocation();
   const { logout } = useAuth();
   const { data: stats } = useUserStats();
   const { data: proficiencies } = useAllProficiencies();
+  const [showLevelModal, setShowLevelModal] = useState(false);
 
   const navItems = [
     { href: "/dashboard", label: "Home", icon: LayoutDashboard },
@@ -52,12 +56,17 @@ export function Navigation() {
         </div>
 
         {stats && (
-          <div className="mb-4 p-4 rounded-xl bg-secondary/50 border border-white/5 backdrop-blur-sm">
+          <button
+            onClick={() => setShowLevelModal(true)}
+            className="w-full mb-4 p-4 rounded-xl bg-secondary/50 border border-white/5 backdrop-blur-sm hover:bg-secondary/70 hover:border-primary/20 transition-all text-left group"
+            data-testid="button-show-level-info"
+          >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Level {stats.level}</span>
               <div className="flex items-center gap-1 text-yellow-400">
                 <Zap className="w-3 h-3 fill-yellow-400" />
                 <span className="text-xs font-bold">{stats.dailyStreak} Day Streak</span>
+                <ChevronRight className="w-3 h-3 text-muted-foreground group-hover:text-primary transition-colors ml-1" />
               </div>
             </div>
             <div className="w-full bg-black/20 rounded-full h-2 mb-1">
@@ -69,7 +78,7 @@ export function Navigation() {
             <div className="flex justify-end">
               <span className="text-[10px] text-muted-foreground">{stats.xp} XP</span>
             </div>
-          </div>
+          </button>
         )}
 
         {proficiencies && proficiencies.length > 0 ? (
@@ -139,6 +148,17 @@ export function Navigation() {
           Sign Out
         </Button>
       </div>
+
+      {showLevelModal && stats && (
+        <LevelInfoModal 
+          userStats={{ 
+            level: stats.level, 
+            xp: stats.xp, 
+            proficiency: proficiencies?.[0]?.cefrLevel 
+          }} 
+          onClose={() => setShowLevelModal(false)} 
+        />
+      )}
     </div>
   );
 }
