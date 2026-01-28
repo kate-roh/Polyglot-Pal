@@ -230,7 +230,8 @@ export default function LevelTest() {
     const isAnswered = answers[currentQuestionIndex] !== undefined;
     const isCorrect = isAnswered && answers[currentQuestionIndex] === currentQuestion.correctAnswer;
     const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
-    const allAnswered = answers.length === questions.length && !answers.includes(undefined as any);
+    const allAnswered = questions.length > 0 && 
+      questions.every((_, idx) => answers[idx] !== undefined && answers[idx] !== null);
 
     return (
       <div className="min-h-screen bg-background p-4">
