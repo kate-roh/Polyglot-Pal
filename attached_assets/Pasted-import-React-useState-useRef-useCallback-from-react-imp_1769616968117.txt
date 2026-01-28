@@ -1,0 +1,323 @@
+import React, { useState, useRef, useCallback } from 'react';
+import { GeminiService } from '../services/geminiService';
+import { AnalysisResult, Bookmark } from '../types';
+import AnalysisDisplay from './AnalysisDisplay';
+
+interface MediaStudioProps {
+  gemini: GeminiService;
+  onAddXP: (amount: number, score?: number) => void;
+  onToggleBookmark: (item: any, type: Bookmark['type'], sourceType: Bookmark['sourceType']) => void;
+  history: AnalysisResult[];
+  onSaveResult: (result: AnalysisResult) => void;
+  onDeleteHistory: (id: string) => void;
+}
+
+interface FileItem {
+  id: string;
+  file: File;
+}
+
+const MediaStudio: React.FC<MediaStudioProps> = ({ gemini, onAddXP, onToggleBookmark, history, onSaveResult, onDeleteHistory }) => {
+  const [activeTab, setActiveTab] = useState<'youtube' | 'file' | 'manual'>('youtube');
+  const [input, setInput] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [selectedResult, setSelectedResult] = useState<AnalysisResult | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 메모리 최적화를 위한 파일 변환 함수
+  const fileToAIFormat = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          // "data:video/mp4;base64," 같은 앞부분 제거
+          const result = reader.result.split(',')[1];
+          resolve(result);
+        } else {
+          reject(new Error("파일 변환 실패"));
+        }
+      };
+      
+      reader.onerror = () => {
+        reject(new Error("파일을 읽는 중 오류가 발생했습니다."));
+      };
+
+      // 대용량 파일 처리 시도
+      try {
+        reader.readAsDataURL(file);
+      } catch (e) {
+        reject(new Error("브라우저 메모리가 부족합니다."));
+      }
+    });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newFiles: FileItem[] = [];
+    for (let i = 0; i < files.length; i++) {
+      // 중요: 브라우저 JS로 처리할 때 200MB는 매우 위험합니다. 안전하게 경고를 띄웁니다.
+      // 실제로 50MB 이상은 Gemini File API (Upload) 방식을 써야 합니다.
+      if (files[i].size > 100 * 1024 * 1024) { 
+        alert(`경고: ${files[i].name} (100MB 초과)는 브라우저 메모리 오류를 일으킬 수 있습니다.`);
+      }
+      newFiles.push({ id: Math.random().toString(36).substr(2, 9), file: files[i] });
+    }
+    setSelectedFiles(prev => [...prev, ...newFiles]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeFile = (id: string) => {
+    setSelectedFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const handleAnalyze = async () => {
+    if (activeTab === 'youtube' && !input.trim()) return;
+    if (activeTab === 'file' && selectedFiles.length === 0) return;
+    if (activeTab === 'manual' && !input.trim()) return;
+
+    setLoading(true);
+    setProgress(5);
+    setStatusMessage("AI 모델 연결 중...");
+    
+    try {
+      await gemini.unlockAudio(); // 오디오 컨텍스트 활성화
+
+      if (activeTab === 'file') {
+        const total = selectedFiles.length;
+        
+        // [중요] for loop로 순차 처리하여 메모리 피크를 낮춤
+        for (let i = 0; i < total; i++) {
+          const item = selectedFiles[i];
+          setStatusMessage(`파일 읽는 중... (${i + 1}/${total}): ${item.file.name}`);
+          setProgress(10 + (i / total) * 30); // 진행률 업데이트
+
+          // 1. 변환 (여기서 메모리가 가장 많이 튐)
+          let base64Content: string | null = null;
+          try {
+             base64Content = await fileToAIFormat(item.file);
+          } catch (readErr) {
+             console.error(readErr);
+             alert(`${item.file.name} 파일을 읽을 수 없습니다. (메모리 부족 가능성)`);
+             continue; // 다음 파일로 넘어감
+          }
+
+          setStatusMessage(`AI 분석 요청 중... (${i + 1}/${total})`);
+          setProgress(40 + (i / total) * 60);
+
+          // 2. 전송
+          try {
+            const res = await gemini.analyzeMedia({
+              type: 'file',
+              content: base64Content, // base64 문자열
+              mimeType: item.file.type,
+              title: item.file.name
+            });
+            
+            onSaveResult(res);
+            onAddXP(50);
+            
+            // 마지막 파일이면 결과 화면 표시
+            if (i === total - 1) {
+              setSelectedResult(res);
+            }
+          } catch (apiErr) {
+            console.error(apiErr);
+            alert(`AI 분석 실패: ${item.file.name}. 파일이 너무 크거나 네트워크 문제일 수 있습니다.`);
+          } finally {
+            // [핵심] 메모리 강제 해제 유도
+            base64Content = null; 
+          }
+        }
+      } else {
+        // YouTube / Manual 모드
+        setStatusMessage(activeTab === 'youtube' ? "유튜브 영상 분석 중..." : "텍스트 컨텍스트 분석 중...");
+        const res = await gemini.analyzeMedia({
+          type: activeTab,
+          content: input,
+          title: activeTab === 'youtube' ? 'YouTube Session' : 'Manual Analysis'
+        });
+        onSaveResult(res);
+        onAddXP(50);
+        setSelectedResult(res);
+      }
+
+      setProgress(100);
+      setTimeout(() => {
+        setLoading(false);
+        setSelectedFiles([]);
+        setInput('');
+      }, 500);
+
+    } catch (err) {
+      console.error(err);
+      alert("분석 프로세스 중 치명적인 오류가 발생했습니다. 페이지를 새로고침 해주세요.");
+      setLoading(false);
+    }
+  };
+
+  // 렌더링 부분은 기존 코드 유지 (AnalysisDisplay 호출 등)
+  if (selectedResult) {
+    return (
+      <AnalysisDisplay 
+        result={selectedResult} 
+        onBack={() => setSelectedResult(null)} 
+        gemini={gemini} 
+        onAddXP={onAddXP} 
+        onToggleBookmark={onToggleBookmark} 
+      />
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 animate-in fade-in duration-500 pb-32">
+      {/* 로딩 화면 */}
+      {loading && (
+        <div className="fixed inset-0 z-[250] bg-[#0b0e14]/95 flex flex-col items-center justify-center p-8 text-center backdrop-blur-sm">
+          <div className="w-full max-w-sm space-y-8">
+            <div className="relative flex items-center justify-center">
+               <div className="w-32 h-32 md:w-40 md:h-40 border-[6px] border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin"></div>
+               <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <p className="text-3xl font-black text-white tabular-nums">{Math.round(progress)}%</p>
+               </div>
+            </div>
+            <div className="space-y-3">
+              <p className="text-white font-bold text-lg animate-pulse">{statusMessage}</p>
+              <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }}></div>
+              </div>
+              <p className="text-indigo-400/60 text-[10px] font-black uppercase tracking-[0.3em]">
+                Large Data Processing
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <header className="text-center">
+        <h2 className="text-3xl font-black italic uppercase text-white tracking-tighter mb-2">Media Studio</h2>
+        <p className="text-slate-500 text-xs">업로드하신 파일은 AI 분석 후 즉시 메모리에서 해제됩니다.</p>
+      </header>
+
+      <div className="glass rounded-[40px] p-5 md:p-10 border border-white/5 shadow-2xl overflow-hidden">
+        {/* 탭 메뉴 */}
+        <div className="flex p-1 bg-white/5 rounded-2xl mb-8 border border-white/5">
+          {['youtube', 'file', 'manual'].map(t => (
+            <button key={t} onClick={() => setActiveTab(t as any)} 
+              className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500 hover:text-white'}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-6">
+          {/* YouTube 입력 */}
+          {activeTab === 'youtube' && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-2">YouTube URL</label>
+              <input type="text" value={input} onChange={e => setInput(e.target.value)} 
+                placeholder="https://www.youtube.com/watch?v=..." 
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-white focus:border-indigo-500 outline-none text-sm transition-all" />
+              <p className="text-[9px] text-slate-500 px-2 italic">* 긴 영상은 분석에 시간이 걸릴 수 있습니다.</p>
+            </div>
+          )}
+          
+          {/* 파일 업로드 (최적화됨) */}
+          {activeTab === 'file' && (
+            <div className="space-y-4">
+              <div onClick={() => fileInputRef.current?.click()} 
+                className="border-2 border-dashed border-white/10 rounded-[40px] p-10 md:p-20 text-center hover:border-indigo-500/50 transition-all cursor-pointer group bg-white/[0.01]">
+                <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileChange} accept="video/*,audio/*" />
+                <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
+                  <i className="fas fa-file-arrow-up text-3xl text-indigo-400"></i>
+                </div>
+                <h4 className="text-white font-bold text-lg mb-2">파일 업로드</h4>
+                <p className="text-[10px] text-slate-500 uppercase tracking-widest italic">
+                  브라우저 안정성을 위해 100MB 이하 권장
+                </p>
+              </div>
+
+              {selectedFiles.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+                  {selectedFiles.map(f => (
+                    <div key={f.id} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition-colors">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${f.file.size > 100*1024*1024 ? 'bg-amber-500/10 text-amber-500' : 'bg-indigo-500/10 text-indigo-400'}`}>
+                           <i className={`fas ${f.file.type.startsWith('video') ? 'fa-film' : 'fa-volume-high'}`}></i>
+                        </div>
+                        <div className="min-w-0">
+                           <p className="text-[11px] font-bold text-white truncate max-w-[140px]">{f.file.name}</p>
+                           <p className={`text-[9px] font-bold uppercase ${f.file.size > 100*1024*1024 ? 'text-amber-500' : 'text-slate-600'}`}>
+                             {Math.round(f.file.size / 1024 / 1024)}MB 
+                             {f.file.size > 100*1024*1024 && ' (Heavy)'}
+                           </p>
+                        </div>
+                      </div>
+                      <button onClick={() => removeFile(f.id)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-500 transition-all">
+                        <i className="fas fa-times"></i>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
+          {activeTab === 'manual' && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-2">Direct Input</label>
+              <textarea value={input} onChange={e => setInput(e.target.value)} 
+                placeholder="분석할 텍스트를 입력하세요..." 
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 text-white h-40 resize-none outline-none focus:border-indigo-500 text-sm transition-all" />
+            </div>
+          )}
+          
+          <button onClick={handleAnalyze} disabled={loading || (activeTab === 'file' ? selectedFiles.length === 0 : !input.trim())} 
+            className="w-full py-5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-[24px] font-black uppercase tracking-[0.2em] text-sm transition-all shadow-xl shadow-indigo-600/20 active:scale-[0.98]">
+            {loading ? <span className="animate-pulse">Processing...</span> : <span><i className="fas fa-brain mr-2"></i> 분석 시작</span>}
+          </button>
+        </div>
+      </div>
+
+      {/* 히스토리 섹션은 그대로 유지 */}
+      {history.length > 0 && (
+        <section className="space-y-4 pt-4">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-xs font-black italic uppercase tracking-widest text-slate-500">
+              <i className="fas fa-clock-rotate-left mr-2 text-indigo-500"></i> History
+            </h3>
+            <button onClick={() => history.forEach(h => onDeleteHistory(h.id))} className="text-[9px] text-slate-600 hover:text-red-400 font-bold uppercase transition-colors">Clear All</button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {history.slice(0, 6).map(item => (
+              <div key={item.id} onClick={() => setSelectedResult(item)}
+                className="glass p-4 rounded-3xl border border-white/5 hover:border-indigo-500/30 transition-all cursor-pointer flex items-center gap-4 group relative">
+                <div className="w-10 h-10 bg-indigo-600/10 rounded-xl flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                  <i className={`fas ${item.type === 'youtube' ? 'fa-play' : item.type === 'file' ? 'fa-file-video' : 'fa-align-left'}`}></i>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-xs text-white truncate">{item.title}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                     <span className="text-[9px] text-indigo-400 font-black uppercase bg-indigo-500/10 px-1.5 py-0.5 rounded">{item.cefrLevel || 'Analyzing'}</span>
+                     <span className="text-[9px] text-slate-600 font-bold uppercase">{new Date(item.date).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); onDeleteHistory(item.id); }} className="opacity-0 group-hover:opacity-100 p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all">
+                  <i className="fas fa-trash-alt text-xs"></i>
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+};
+
+export default MediaStudio;
