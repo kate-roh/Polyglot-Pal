@@ -480,7 +480,7 @@ ${JSON.stringify(segmentsData, null, 2)}`;
 
     } catch (err) {
       console.error("Analysis Error:", err);
-      res.status(500).json({ message: "Analysis failed", error: String(err) });
+      res.status(500).json({ message: "Analysis failed" });
     }
   };
 
