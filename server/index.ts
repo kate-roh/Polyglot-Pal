@@ -4,6 +4,14 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { redactSecrets, safeError } from "./logRedact";
 import { getUploadsDir } from "./mediaStore";
+import crypto from "node:crypto";
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __reqCounter: number | undefined;
+}
+
+type RequestWithId = Request & { requestId?: string };
 
 const app = express();
 const httpServer = createServer(app);
@@ -49,7 +57,17 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
-app.use((req, res, next) => {
+// Request ID middleware (trace id)
+app.use((req: RequestWithId, res, next) => {
+  const incoming = String(req.header("X-Request-Id") || "").trim();
+  const counter = (globalThis.__reqCounter = (globalThis.__reqCounter || 0) + 1);
+  const rid = incoming || (crypto.randomUUID ? crypto.randomUUID() : `req_${Date.now()}_${counter}`);
+  req.requestId = rid;
+  res.setHeader("X-Request-Id", rid);
+  next();
+});
+
+app.use((req: RequestWithId, res, next) => {
   const start = Date.now();
   const path = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
@@ -63,7 +81,8 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      const rid = req.requestId ? ` rid=${req.requestId}` : "";
+      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms${rid}`;
       if (capturedJsonResponse) {
         logLine += ` :: ${redactSecrets(JSON.stringify(capturedJsonResponse))}`;
       }
@@ -78,17 +97,18 @@ app.use((req, res, next) => {
 (async () => {
   await registerRoutes(httpServer, app);
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+  app.use((err: any, req: RequestWithId, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
+    const requestId = req.requestId;
 
-    safeError("Internal Server Error:", err?.stack || err?.message || err);
+    safeError("Internal Server Error:", { requestId, err: err?.stack || err?.message || err });
 
     if (res.headersSent) {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    return res.status(status).json({ message, requestId });
   });
 
   // importantly only setup vite in development and after
