@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { redactSecrets, safeError } from "./logRedact";
 import { getUploadsDir } from "./mediaStore";
 
 const app = express();
@@ -64,7 +65,7 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        logLine += ` :: ${redactSecrets(JSON.stringify(capturedJsonResponse))}`;
       }
 
       log(logLine);
@@ -81,7 +82,7 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+    safeError("Internal Server Error:", err?.stack || err?.message || err);
 
     if (res.headersSent) {
       return next(err);
