@@ -55,6 +55,44 @@ export default function MediaStudio() {
   
   const loading = loadingMedia || loadingVideo;
 
+  async function analyzeAsset(assetId: string) {
+    setStartTime(Date.now());
+    setProgress(25);
+    setStatusMessage('분석 준비 중...');
+
+    // simulate progress a bit
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    progressIntervalRef.current = setInterval(() => {
+      setProgress(prev => (prev >= 85 ? prev : prev + 3));
+    }, 1200);
+
+    try {
+      setStatusMessage('AI 분석 진행 중...');
+      const res = await fetch('/api/media/analyze-asset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ assetId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || '분석 실패');
+
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      setProgress(100);
+      setSelectedResult(data);
+      return;
+    } finally {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      setEstimatedTimeLeft(0);
+    }
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -445,6 +483,68 @@ export default function MediaStudio() {
                   <h4 className="text-foreground font-bold text-lg mb-2">Upload your files</h4>
                   <p className="text-xs text-muted-foreground uppercase tracking-widest">Video/Audio files under 200MB recommended</p>
                 </div>
+
+                {mediaLibrary?.items?.length ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between px-2">
+                      <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">내 업로드 라이브러리</h3>
+                      <span className="text-xs text-muted-foreground">{mediaLibrary.items.length}개</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
+                      {mediaLibrary.items.slice(0, 12).map((a) => (
+                        <div key={a.id} className="flex items-center justify-between p-4 bg-muted/50 rounded-2xl border border-border/50">
+                          <div className="flex items-center gap-4 min-w-0">
+                            {a.mimeType?.startsWith('video') ? <Film className="w-5 h-5 text-primary" /> : <Volume2 className="w-5 h-5 text-primary" />}
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-foreground truncate max-w-[180px]">{a.originalName}</p>
+                              <p className="text-xs text-muted-foreground font-bold uppercase mt-1">{new Date(a.createdAt).toLocaleDateString()} · {Math.round(a.size/1024/1024)}MB</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                if (a.url) {
+                                  setUploadedVideoUrl(a.url);
+                                  setUploadedAssetUrl(a.url);
+                                }
+                              }}
+                            >재생</Button>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                if (a.url && a.mimeType?.startsWith('video')) {
+                                  setUploadedVideoUrl(a.url);
+                                  setUploadedAssetUrl(a.url);
+                                }
+                                await analyzeAsset(a.id);
+                              }}
+                            >분석</Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                if (!confirm('이 미디어를 삭제할까요?')) return;
+                                await deleteMedia(a.id);
+                                if (uploadedAssetUrl === a.url) {
+                                  setUploadedAssetUrl(null);
+                                  setUploadedVideoUrl(null);
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
                 {selectedFiles.length > 0 && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto">
