@@ -57,17 +57,45 @@ export default function MediaStudio() {
 
   async function analyzeAsset(assetId: string) {
     setStartTime(Date.now());
-    setProgress(25);
-    setStatusMessage('분석 준비 중...');
+    setProgress(8);
 
-    // simulate progress a bit
-    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    const stages = [
+      { atMs: 0, msg: '분석 준비 중…' },
+      { atMs: 1200, msg: '파일 불러오는 중…' },
+      { atMs: 3500, msg: '음성/자막 생성(STT) 중…' },
+      { atMs: 8500, msg: '세그먼트 학습자료 생성 중…' },
+      { atMs: 14000, msg: '정리/저장 중…' },
+    ];
+
+    // clear any prior interval
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+
+    const t0 = Date.now();
     progressIntervalRef.current = setInterval(() => {
-      setProgress(prev => (prev >= 85 ? prev : prev + 3));
-    }, 1200);
+      const dt = Date.now() - t0;
+
+      // status text by elapsed time
+      for (let i = stages.length - 1; i >= 0; i--) {
+        if (dt >= stages[i].atMs) {
+          setStatusMessage(stages[i].msg);
+          break;
+        }
+      }
+
+      // progress curve: quick early, slow later
+      setProgress(prev => {
+        if (prev < 25) return prev + 4;
+        if (prev < 55) return prev + 3;
+        if (prev < 75) return prev + 2;
+        if (prev < 88) return prev + 1;
+        return prev;
+      });
+    }, 900);
 
     try {
-      setStatusMessage('AI 분석 진행 중...');
       const res = await fetch('/api/media/analyze-asset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -82,6 +110,7 @@ export default function MediaStudio() {
         progressIntervalRef.current = null;
       }
       setProgress(100);
+      setStatusMessage('완료!');
       setSelectedResult(data);
       return;
     } finally {
