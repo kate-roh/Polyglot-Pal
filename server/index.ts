@@ -24,6 +24,17 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// Health check (lightweight liveness)
+app.get("/healthz", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "polyglot-pal",
+    ts: new Date().toISOString(),
+    pid: process.pid,
+    nodeEnv: process.env.NODE_ENV || null,
+  });
+});
+
 // Serve uploaded media (do not cache aggressively; iOS PWA can get confused)
 app.use(
   "/uploads",
