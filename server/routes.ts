@@ -34,6 +34,9 @@ export async function registerRoutes(
   // === Media Upload / Library (for Shadowing) ===
   const upload = multer({ dest: "tmp_uploads/", limits: { fileSize: 220 * 1024 * 1024 } });
 
+  const requestIdOf = (req: any) => String(req?.requestId || req?.header?.("X-Request-Id") || "").trim() || undefined;
+  const errBody = (req: any, message: string, code?: string) => ({ message, requestId: requestIdOf(req), code });
+
   app.get('/api/media', protect, async (_req, res) => {
     // For now: global library. If you want per-user isolation, we can add userId scoping.
     res.json({ items: listMediaAssets() });
@@ -53,7 +56,7 @@ export async function registerRoutes(
 
     try {
       const f = req.file;
-      if (!f) return res.status(400).json({ message: 'file is required' });
+      if (!f) return res.status(400).json(errBody(req, 'file is required', 'file_required'));
 
       const asset = createMediaAsset({
         originalName: f.originalname,
@@ -77,7 +80,7 @@ export async function registerRoutes(
       if (idem) setIdempotentResponse(idem, 200, body);
       res.json(body);
     } catch (e) {
-      const body = { message: 'upload failed' };
+      const body = errBody(req, 'upload failed', 'upload_failed');
       if (idem) setIdempotentResponse(idem, 500, body);
       res.status(500).json(body);
     }
@@ -489,10 +492,10 @@ ${JSON.stringify(segmentsData, null, 2)}`;
   // Analyze already-uploaded media asset (avoid base64 in browser)
   app.post('/api/media/analyze-asset', protect, async (req: any, res) => {
     const userId = req.user?.claims?.sub;
-    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+    if (!userId) return res.status(401).json(errBody(req, 'Unauthorized', 'unauthorized'));
 
     const assetId = String(req.body?.assetId || '').trim();
-    if (!assetId) return res.status(400).json({ message: 'assetId is required' });
+    if (!assetId) return res.status(400).json(errBody(req, 'assetId is required', 'assetId_required'));
 
     const idem = makeIdempotencyKey({
       userId,
@@ -506,7 +509,7 @@ ${JSON.stringify(segmentsData, null, 2)}`;
 
     try {
       const asset = getMediaAsset(assetId);
-      if (!asset) return res.status(404).json({ message: 'media asset not found' });
+      if (!asset) return res.status(404).json(errBody(req, 'media asset not found', 'asset_not_found'));
 
       const raw = await import('node:fs').then(fs => fs.readFileSync(asset.filePath));
 
@@ -535,7 +538,7 @@ ${JSON.stringify(segmentsData, null, 2)}`;
       return await mediaAnalyzeHandler(req, res);
     } catch (e) {
       console.error('Analyze asset error:', e);
-      const body = { message: 'Analysis failed' };
+      const body = errBody(req, 'Analysis failed', 'analysis_failed');
       if (idem) setIdempotentResponse(idem, 500, body);
       return res.status(500).json(body);
     }

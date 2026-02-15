@@ -4,20 +4,19 @@ import { insertUserStatsSchema, insertAnalysisHistorySchema, insertBookmarkSchem
 // Re-export types for use in frontend
 export type { MediaAnalyzeRequest, AnalysisResult } from './schema';
 
+const baseErrorSchema = z.object({
+  message: z.string(),
+  requestId: z.string().optional(),
+  code: z.string().optional(),
+});
+
 export const errorSchemas = {
-  validation: z.object({
-    message: z.string(),
+  validation: baseErrorSchema.extend({
     field: z.string().optional(),
   }),
-  notFound: z.object({
-    message: z.string(),
-  }),
-  internal: z.object({
-    message: z.string(),
-  }),
-  unauthorized: z.object({
-    message: z.string(),
-  })
+  notFound: baseErrorSchema,
+  internal: baseErrorSchema,
+  unauthorized: baseErrorSchema,
 };
 
 export const api = {
