@@ -279,7 +279,7 @@ export async function registerRoutes(
   });
 
   // === Media Analysis Endpoint (for file and manual) ===
-  app.post(api.media.analyze.path, protect, async (req: any, res) => {
+  const mediaAnalyzeHandler = async (req: any, res: any) => {
     try {
       const { type, content, title, mimeType } = api.media.analyze.input.parse(req.body);
       
@@ -464,6 +464,35 @@ ${JSON.stringify(segmentsData, null, 2)}`;
     } catch (err) {
       console.error("Analysis Error:", err);
       res.status(500).json({ message: "Analysis failed", error: String(err) });
+    }
+  };
+
+  app.post(api.media.analyze.path, protect, mediaAnalyzeHandler);
+
+  // Analyze already-uploaded media asset (avoid base64 in browser)
+  app.post('/api/media/analyze-asset', protect, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+      const assetId = String(req.body?.assetId || '').trim();
+      if (!assetId) return res.status(400).json({ message: 'assetId is required' });
+
+      const asset = getMediaAsset(assetId);
+      if (!asset) return res.status(404).json({ message: 'media asset not found' });
+
+      const raw = await import('node:fs').then(fs => fs.readFileSync(asset.filePath));
+      // mimic original endpoint shape
+      req.body = {
+        type: 'file',
+        content: Buffer.from(raw).toString('base64'),
+        title: asset.originalName,
+        mimeType: asset.mimeType,
+      };
+      return await mediaAnalyzeHandler(req, res);
+    } catch (e) {
+      console.error('Analyze asset error:', e);
+      return res.status(500).json({ message: 'Analysis failed', error: String(e) });
     }
   });
 

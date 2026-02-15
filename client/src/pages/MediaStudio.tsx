@@ -174,20 +174,25 @@ export default function MediaStudio() {
           return;
         }
 
-        // Keep existing analysis input for now (minimal change)
+        // Analyze by assetId (server reads the stored file; avoids huge base64 in browser)
         try {
-          const reader = new FileReader();
-          content = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => {
-              const result = reader.result as string;
-              const base64 = result.split(',')[1];
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
+          const res = await fetch('/api/media/analyze-asset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ assetId: up.asset.id }),
           });
-        } catch {
-          alert("파일 읽기 실패");
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(j?.message || '분석 실패');
+          }
+          const result = await res.json();
+          setSelectedResult(result);
+          setSelectedFiles([]);
+          setInput('');
+          return;
+        } catch (err) {
+          alert(err instanceof Error ? err.message : '분석 실패');
           return;
         }
       }
