@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { getUploadsDir } from "./mediaStore";
 
 const app = express();
 const httpServer = createServer(app);
@@ -22,6 +23,19 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Serve uploaded media (do not cache aggressively; iOS PWA can get confused)
+app.use(
+  "/uploads",
+  express.static(getUploadsDir(), {
+    etag: true,
+    lastModified: true,
+    maxAge: 0,
+    setHeaders: (res) => {
+      res.setHeader("Cache-Control", "no-store");
+    },
+  }),
+);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
