@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
+import multer from "multer";
+import { createMediaAsset, deleteMediaAsset, getMediaAsset, listMediaAssets } from "./mediaStore";
 import { registerChatRoutes } from "./replit_integrations/chat/routes";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -27,6 +29,49 @@ export async function registerRoutes(
 
   // 2. Protected Routes Middleware
   const protect = isAuthenticated;
+
+  // === Media Upload / Library (for Shadowing) ===
+  const upload = multer({ dest: "tmp_uploads/", limits: { fileSize: 220 * 1024 * 1024 } });
+
+  app.get('/api/media', protect, async (_req, res) => {
+    // For now: global library. If you want per-user isolation, we can add userId scoping.
+    res.json({ items: listMediaAssets() });
+  });
+
+  app.post('/api/media/upload', protect, upload.single('file'), async (req: any, res) => {
+    try {
+      const f = req.file;
+      if (!f) return res.status(400).json({ message: 'file is required' });
+
+      const asset = createMediaAsset({
+        originalName: f.originalname,
+        mimeType: f.mimetype,
+        size: f.size,
+        tempPath: f.path,
+      });
+
+      const fileName = asset.filePath.split(/[/\\]/).pop();
+      res.json({
+        asset: {
+          id: asset.id,
+          originalName: asset.originalName,
+          mimeType: asset.mimeType,
+          size: asset.size,
+          createdAt: asset.createdAt,
+          url: fileName ? `/uploads/${fileName}` : null,
+        },
+      });
+    } catch (e) {
+      res.status(500).json({ message: 'upload failed', error: String(e) });
+    }
+  });
+
+  app.delete('/api/media/:id', protect, async (req, res) => {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ message: 'id required' });
+    const ok = deleteMediaAsset(id);
+    res.json({ ok });
+  });
 
   // === Video Analysis Endpoint (YouTube, TikTok, Instagram) ===
   app.post('/api/video/analyze', protect, async (req: any, res) => {
