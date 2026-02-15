@@ -315,8 +315,8 @@ export async function registerRoutes(
             
             const { speechToTextWithTimestamps, ensureCompatibleFormat, detectAudioFormat } = await import('./replit_integrations/audio/client');
             
-            // Convert base64 to buffer
-            const rawBuffer = Buffer.from(content, "base64");
+            // Convert base64 to buffer (or reuse rawFileBuffer when provided by analyze-asset route)
+            const rawBuffer = (req as any).rawFileBuffer ? (req as any).rawFileBuffer : Buffer.from(content, "base64");
             console.log(`Buffer size: ${rawBuffer.length} bytes`);
             
             // Detect format
@@ -509,10 +509,18 @@ ${JSON.stringify(segmentsData, null, 2)}`;
       if (!asset) return res.status(404).json({ message: 'media asset not found' });
 
       const raw = await import('node:fs').then(fs => fs.readFileSync(asset.filePath));
+
+      // For audio/video, avoid re-encoding huge files to base64 (memory+CPU spike).
+      // mediaAnalyzeHandler can consume req.rawFileBuffer directly.
+      const isAudioVideo = asset.mimeType.startsWith('audio/') || asset.mimeType.startsWith('video/');
+      if (isAudioVideo) {
+        (req as any).rawFileBuffer = raw;
+      }
+
       // mimic original endpoint shape
       req.body = {
         type: 'file',
-        content: Buffer.from(raw).toString('base64'),
+        content: isAudioVideo ? '' : Buffer.from(raw).toString('base64'),
         title: asset.originalName,
         mimeType: asset.mimeType,
       };
