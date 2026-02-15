@@ -1,5 +1,10 @@
 node_modules
 dist
+
+# Local environment files (never commit secrets)
+.env
+.env.*
+
 .DS_Store
 server/public
 vite.config.ts.*
