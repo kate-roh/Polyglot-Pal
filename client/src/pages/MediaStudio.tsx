@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 import { useAnalyzeMedia, useAnalyzeVideo } from '@/hooks/use-media';
+import { useMediaLibrary, useUploadMedia, useDeleteMedia } from '@/hooks/use-media-library';
 import { useHistory, useDeleteHistory } from '@/hooks/use-history';
 import { AnalysisDisplay } from '@/components/AnalysisDisplay';
 import { VideoAnalysisDisplay } from '@/components/VideoAnalysisDisplay';
@@ -22,6 +23,7 @@ export default function MediaStudio() {
   const [activeTab, setActiveTab] = useState<TabType>('video');
   const [input, setInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
+  const [uploadedAssetUrl, setUploadedAssetUrl] = useState<string | null>(null);
   const [selectedResult, setSelectedResult] = useState<AnalysisResult | null>(null);
   const [videoResult, setVideoResult] = useState<VideoAnalysisResult | null>(null);
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
@@ -45,6 +47,9 @@ export default function MediaStudio() {
   
   const { mutate: analyze, isPending: loadingMedia } = useAnalyzeMedia();
   const { mutate: analyzeVideo, isPending: loadingVideo } = useAnalyzeVideo();
+  const { data: mediaLibrary } = useMediaLibrary();
+  const { mutateAsync: uploadMedia } = useUploadMedia();
+  const { mutateAsync: deleteMedia } = useDeleteMedia();
   const { data: history = [] } = useHistory();
   const { mutate: deleteHistory } = useDeleteHistory();
   
@@ -70,18 +75,8 @@ export default function MediaStudio() {
     setSelectedFiles(prev => prev.filter(f => f.id !== id));
   };
 
-  const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
+  // NOTE: We no longer need to base64 the full media in-browser.
+  // Upload to server for persistence (iOS PWA friendly).
 
   const handleAnalyze = async () => {
     if (activeTab === 'video' && !input.trim()) return;
@@ -156,19 +151,42 @@ export default function MediaStudio() {
         mimeType = file.type;
         title = file.name;
         
-        // Create blob URL for video playback if it's a video file
-        if (file.type.startsWith('video/')) {
-          const blobUrl = URL.createObjectURL(file);
-          setUploadedVideoUrl(blobUrl);
-        } else {
-          setUploadedVideoUrl(null);
-        }
-        
+        setProgress(25);
+        setStatusMessage("서버에 업로드 중...");
+
         try {
-          content = await readFileAsBase64(file);
+          const up = await uploadMedia(file);
+          const url = up.asset.url;
+          setUploadedAssetUrl(url);
+
+          if (file.type.startsWith('video/') && url) {
+            setUploadedVideoUrl(url);
+          } else {
+            setUploadedVideoUrl(null);
+          }
+
+          // For analysis, keep current behavior (base64/text) for now.
+          // TODO: switch analyze endpoint to accept mediaId to avoid re-upload.
           setProgress(40);
           setStatusMessage("AI로 전송 중...");
         } catch (err) {
+          alert(err instanceof Error ? err.message : "업로드 실패");
+          return;
+        }
+
+        // Keep existing analysis input for now (minimal change)
+        try {
+          const reader = new FileReader();
+          content = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => {
+              const result = reader.result as string;
+              const base64 = result.split(',')[1];
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        } catch {
           alert("파일 읽기 실패");
           return;
         }
