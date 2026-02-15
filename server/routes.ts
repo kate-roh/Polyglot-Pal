@@ -8,6 +8,7 @@ import { registerChatRoutes } from "./replit_integrations/chat/routes";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { GoogleGenAI } from "@google/genai";
+import { makeIdempotencyKey, getIdempotentResponse, setIdempotentResponse } from "./idempotency";
 
 // Initialize Gemini
 const ai = new GoogleGenAI({
@@ -39,6 +40,17 @@ export async function registerRoutes(
   });
 
   app.post('/api/media/upload', protect, upload.single('file'), async (req: any, res) => {
+    const userId = req.user?.claims?.sub;
+    const idem = makeIdempotencyKey({
+      userId,
+      route: "POST /api/media/upload",
+      key: req.header("Idempotency-Key"),
+    });
+    if (idem) {
+      const hit = getIdempotentResponse(idem);
+      if (hit) return res.status(hit.status).json(hit.body);
+    }
+
     try {
       const f = req.file;
       if (!f) return res.status(400).json({ message: 'file is required' });
@@ -51,7 +63,7 @@ export async function registerRoutes(
       });
 
       const fileName = asset.filePath.split(/[/\\]/).pop();
-      res.json({
+      const body = {
         asset: {
           id: asset.id,
           originalName: asset.originalName,
@@ -60,9 +72,14 @@ export async function registerRoutes(
           createdAt: asset.createdAt,
           url: fileName ? `/uploads/${fileName}` : null,
         },
-      });
+      };
+
+      if (idem) setIdempotentResponse(idem, 200, body);
+      res.json(body);
     } catch (e) {
-      res.status(500).json({ message: 'upload failed', error: String(e) });
+      const body = { message: 'upload failed' };
+      if (idem) setIdempotentResponse(idem, 500, body);
+      res.status(500).json(body);
     }
   });
 
@@ -471,13 +488,23 @@ ${JSON.stringify(segmentsData, null, 2)}`;
 
   // Analyze already-uploaded media asset (avoid base64 in browser)
   app.post('/api/media/analyze-asset', protect, async (req: any, res) => {
+    const userId = req.user?.claims?.sub;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const assetId = String(req.body?.assetId || '').trim();
+    if (!assetId) return res.status(400).json({ message: 'assetId is required' });
+
+    const idem = makeIdempotencyKey({
+      userId,
+      route: "POST /api/media/analyze-asset",
+      key: req.header("Idempotency-Key") || `${assetId}`,
+    });
+    if (idem) {
+      const hit = getIdempotentResponse(idem);
+      if (hit) return res.status(hit.status).json(hit.body);
+    }
+
     try {
-      const userId = req.user?.claims?.sub;
-      if (!userId) return res.status(401).json({ message: 'Unauthorized' });
-
-      const assetId = String(req.body?.assetId || '').trim();
-      if (!assetId) return res.status(400).json({ message: 'assetId is required' });
-
       const asset = getMediaAsset(assetId);
       if (!asset) return res.status(404).json({ message: 'media asset not found' });
 
@@ -489,10 +516,20 @@ ${JSON.stringify(segmentsData, null, 2)}`;
         title: asset.originalName,
         mimeType: asset.mimeType,
       };
+
+      // Intercept response to cache body/status for idempotency.
+      const originalJson = res.json.bind(res);
+      res.json = (bodyJson: any) => {
+        if (idem) setIdempotentResponse(idem, res.statusCode || 200, bodyJson);
+        return originalJson(bodyJson);
+      };
+
       return await mediaAnalyzeHandler(req, res);
     } catch (e) {
       console.error('Analyze asset error:', e);
-      return res.status(500).json({ message: 'Analysis failed', error: String(e) });
+      const body = { message: 'Analysis failed' };
+      if (idem) setIdempotentResponse(idem, 500, body);
+      return res.status(500).json(body);
     }
   });
 

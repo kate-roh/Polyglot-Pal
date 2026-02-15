@@ -98,7 +98,11 @@ export default function MediaStudio() {
     try {
       const res = await fetch('/api/media/analyze-asset', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // Idempotency: avoid duplicate analyses on iOS/PWA retries
+          'Idempotency-Key': `analyze-asset:${assetId}`,
+        },
         credentials: 'include',
         body: JSON.stringify({ assetId }),
       });
@@ -221,8 +225,12 @@ export default function MediaStudio() {
         setProgress(25);
         setStatusMessage("서버에 업로드 중...");
 
+        let up: any;
         try {
-          const up = await uploadMedia(file);
+          // Idempotency: iOS/PWA can retry requests on flaky networks.
+          // Use a stable key per "analyze attempt" to avoid duplicate uploads.
+          const uploadKey = `upload:${file.name}:${file.size}:${file.lastModified}`;
+          up = await uploadMedia({ file, idempotencyKey: uploadKey });
           const url = up.asset.url;
           setUploadedAssetUrl(url);
 
@@ -243,9 +251,13 @@ export default function MediaStudio() {
 
         // Analyze by assetId (server reads the stored file; avoids huge base64 in browser)
         try {
+          const analyzeKey = `analyze-asset:${up.asset.id}`;
           const res = await fetch('/api/media/analyze-asset', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': analyzeKey,
+            },
             credentials: 'include',
             body: JSON.stringify({ assetId: up.asset.id }),
           });

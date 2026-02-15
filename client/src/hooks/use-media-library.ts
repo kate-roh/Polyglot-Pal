@@ -26,13 +26,14 @@ export function useMediaLibrary() {
 export function useUploadMedia() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (file: File): Promise<{ asset: MediaAsset }> => {
+    mutationFn: async (vars: { file: File; idempotencyKey?: string }): Promise<{ asset: MediaAsset }> => {
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", vars.file);
       const res = await fetch("/api/media/upload", {
         method: "POST",
         body: fd,
         credentials: "include",
+        headers: vars.idempotencyKey ? { "Idempotency-Key": vars.idempotencyKey } : undefined,
       });
       if (!res.ok) {
         if (res.status === 401) throw new Error("Unauthorized");
