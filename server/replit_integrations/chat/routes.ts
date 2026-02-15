@@ -7,14 +7,20 @@ Supported models: gemini-2.5-flash (fast), gemini-2.5-pro (advanced reasoning)
 Usage: Include httpOptions with baseUrl and empty apiVersion when using AI Integrations (required)
 */
 
-// This is using Replit's AI Integrations service, which provides Gemini-compatible API access without requiring your own Gemini API key.
-const ai = new GoogleGenAI({
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-  httpOptions: {
-    apiVersion: "",
-    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-  },
-});
+// This is using Replit's AI Integrations service, which provides Gemini-compatible API access.
+// In local dev (Windows) these env vars are often missing; don't crash the whole server.
+function getAI() {
+  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  if (!apiKey || apiKey === "_DUMMY_API_KEY_") return null;
+
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      apiVersion: "",
+      baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
+    },
+  });
+}
 
 export function registerChatRoutes(app: Express): void {
   // Get all conversations
@@ -88,6 +94,13 @@ export function registerChatRoutes(app: Express): void {
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
+
+      const ai = getAI();
+      if (!ai) {
+        res.write(`data: ${JSON.stringify({ error: "AI integration is not configured (missing AI_INTEGRATIONS_GEMINI_API_KEY)." })}\n\n`);
+        res.end();
+        return;
+      }
 
       // Stream response from Gemini
       const stream = await ai.models.generateContentStream({

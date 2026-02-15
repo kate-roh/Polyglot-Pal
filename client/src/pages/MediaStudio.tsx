@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 import { useAnalyzeMedia, useAnalyzeVideo } from '@/hooks/use-media';
+import { useMediaLibrary, useUploadMedia, useDeleteMedia } from '@/hooks/use-media-library';
 import { useHistory, useDeleteHistory } from '@/hooks/use-history';
 import { AnalysisDisplay } from '@/components/AnalysisDisplay';
 import { VideoAnalysisDisplay } from '@/components/VideoAnalysisDisplay';
@@ -22,6 +23,7 @@ export default function MediaStudio() {
   const [activeTab, setActiveTab] = useState<TabType>('video');
   const [input, setInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
+  const [uploadedAssetUrl, setUploadedAssetUrl] = useState<string | null>(null);
   const [selectedResult, setSelectedResult] = useState<AnalysisResult | null>(null);
   const [videoResult, setVideoResult] = useState<VideoAnalysisResult | null>(null);
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
@@ -45,10 +47,51 @@ export default function MediaStudio() {
   
   const { mutate: analyze, isPending: loadingMedia } = useAnalyzeMedia();
   const { mutate: analyzeVideo, isPending: loadingVideo } = useAnalyzeVideo();
+  const { data: mediaLibrary } = useMediaLibrary();
+  const { mutateAsync: uploadMedia } = useUploadMedia();
+  const { mutateAsync: deleteMedia } = useDeleteMedia();
   const { data: history = [] } = useHistory();
   const { mutate: deleteHistory } = useDeleteHistory();
   
   const loading = loadingMedia || loadingVideo;
+
+  async function analyzeAsset(assetId: string) {
+    setStartTime(Date.now());
+    setProgress(25);
+    setStatusMessage('분석 준비 중...');
+
+    // simulate progress a bit
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    progressIntervalRef.current = setInterval(() => {
+      setProgress(prev => (prev >= 85 ? prev : prev + 3));
+    }, 1200);
+
+    try {
+      setStatusMessage('AI 분석 진행 중...');
+      const res = await fetch('/api/media/analyze-asset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ assetId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || '분석 실패');
+
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      setProgress(100);
+      setSelectedResult(data);
+      return;
+    } finally {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      setEstimatedTimeLeft(0);
+    }
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -70,18 +113,8 @@ export default function MediaStudio() {
     setSelectedFiles(prev => prev.filter(f => f.id !== id));
   };
 
-  const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
+  // NOTE: We no longer need to base64 the full media in-browser.
+  // Upload to server for persistence (iOS PWA friendly).
 
   const handleAnalyze = async () => {
     if (activeTab === 'video' && !input.trim()) return;
@@ -156,20 +189,48 @@ export default function MediaStudio() {
         mimeType = file.type;
         title = file.name;
         
-        // Create blob URL for video playback if it's a video file
-        if (file.type.startsWith('video/')) {
-          const blobUrl = URL.createObjectURL(file);
-          setUploadedVideoUrl(blobUrl);
-        } else {
-          setUploadedVideoUrl(null);
-        }
-        
+        setProgress(25);
+        setStatusMessage("서버에 업로드 중...");
+
         try {
-          content = await readFileAsBase64(file);
+          const up = await uploadMedia(file);
+          const url = up.asset.url;
+          setUploadedAssetUrl(url);
+
+          if (file.type.startsWith('video/') && url) {
+            setUploadedVideoUrl(url);
+          } else {
+            setUploadedVideoUrl(null);
+          }
+
+          // For analysis, keep current behavior (base64/text) for now.
+          // TODO: switch analyze endpoint to accept mediaId to avoid re-upload.
           setProgress(40);
           setStatusMessage("AI로 전송 중...");
         } catch (err) {
-          alert("파일 읽기 실패");
+          alert(err instanceof Error ? err.message : "업로드 실패");
+          return;
+        }
+
+        // Analyze by assetId (server reads the stored file; avoids huge base64 in browser)
+        try {
+          const res = await fetch('/api/media/analyze-asset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ assetId: up.asset.id }),
+          });
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(j?.message || '분석 실패');
+          }
+          const result = await res.json();
+          setSelectedResult(result);
+          setSelectedFiles([]);
+          setInput('');
+          return;
+        } catch (err) {
+          alert(err instanceof Error ? err.message : '분석 실패');
           return;
         }
       }
@@ -422,6 +483,68 @@ export default function MediaStudio() {
                   <h4 className="text-foreground font-bold text-lg mb-2">Upload your files</h4>
                   <p className="text-xs text-muted-foreground uppercase tracking-widest">Video/Audio files under 200MB recommended</p>
                 </div>
+
+                {mediaLibrary?.items?.length ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between px-2">
+                      <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">내 업로드 라이브러리</h3>
+                      <span className="text-xs text-muted-foreground">{mediaLibrary.items.length}개</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
+                      {mediaLibrary.items.slice(0, 12).map((a) => (
+                        <div key={a.id} className="flex items-center justify-between p-4 bg-muted/50 rounded-2xl border border-border/50">
+                          <div className="flex items-center gap-4 min-w-0">
+                            {a.mimeType?.startsWith('video') ? <Film className="w-5 h-5 text-primary" /> : <Volume2 className="w-5 h-5 text-primary" />}
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-foreground truncate max-w-[180px]">{a.originalName}</p>
+                              <p className="text-xs text-muted-foreground font-bold uppercase mt-1">{new Date(a.createdAt).toLocaleDateString()} · {Math.round(a.size/1024/1024)}MB</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                if (a.url) {
+                                  setUploadedVideoUrl(a.url);
+                                  setUploadedAssetUrl(a.url);
+                                }
+                              }}
+                            >재생</Button>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                if (a.url && a.mimeType?.startsWith('video')) {
+                                  setUploadedVideoUrl(a.url);
+                                  setUploadedAssetUrl(a.url);
+                                }
+                                await analyzeAsset(a.id);
+                              }}
+                            >분석</Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                if (!confirm('이 미디어를 삭제할까요?')) return;
+                                await deleteMedia(a.id);
+                                if (uploadedAssetUrl === a.url) {
+                                  setUploadedAssetUrl(null);
+                                  setUploadedVideoUrl(null);
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
                 {selectedFiles.length > 0 && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto">
