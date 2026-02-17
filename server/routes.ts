@@ -243,12 +243,19 @@ export async function registerRoutes(
   });
 
   // === TTS Endpoint (OpenAI) ===
+  const ttsSchema = z.object({
+    text: z.string().min(1, "Text is required").max(4096),
+    voice: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']).optional().default('alloy'),
+  });
+
   app.post('/api/tts', protect, async (req: any, res) => {
     try {
-      const { text, voice = 'alloy' } = req.body;
-      if (!text) {
-        return res.status(400).json({ message: "Text required" });
+      const validation = ttsSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: "Invalid input", errors: validation.error.flatten().fieldErrors });
       }
+
+      const { text, voice } = validation.data;
 
       const response = await fetch('https://api.openai.com/v1/audio/speech', {
         method: 'POST',
@@ -258,7 +265,7 @@ export async function registerRoutes(
         },
         body: JSON.stringify({
           model: 'tts-1',
-          input: text.substring(0, 4096),
+          input: text,
           voice: voice,
           response_format: 'mp3'
         })
