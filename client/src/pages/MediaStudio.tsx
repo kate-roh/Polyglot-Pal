@@ -186,6 +186,7 @@ export default function MediaStudio() {
       setStatusMessage("파일 읽는 중...");
       const file = selectedFiles[0]?.file;
       if (file) {
+        let uploadedAssetId: number | null = null;
         mimeType = file.type;
         title = file.name;
         
@@ -194,6 +195,7 @@ export default function MediaStudio() {
 
         try {
           const up = await uploadMedia(file);
+          uploadedAssetId = up.asset.id;
           const url = up.asset.url;
           setUploadedAssetUrl(url);
 
@@ -214,11 +216,15 @@ export default function MediaStudio() {
 
         // Analyze by assetId (server reads the stored file; avoids huge base64 in browser)
         try {
+          if (!uploadedAssetId) {
+            throw new Error('업로드된 에셋 정보를 찾을 수 없습니다.');
+          }
+
           const res = await fetch('/api/media/analyze-asset', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ assetId: up.asset.id }),
+            body: JSON.stringify({ assetId: uploadedAssetId }),
           });
           if (!res.ok) {
             const j = await res.json().catch(() => ({}));
